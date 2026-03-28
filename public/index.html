@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Santen Casino</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600;700&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<div class="grain"></div>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen" class="login-screen">
+  <div class="login-bg">
+    <div class="login-orb orb1"></div>
+    <div class="login-orb orb2"></div>
+    <div class="login-orb orb3"></div>
+  </div>
+  <div class="login-card">
+    <div class="login-logo">
+      <span class="logo-s">S</span><span class="logo-coins">ANTEN</span>
+      <div class="logo-sub">CASINO</div>
+    </div>
+    <p class="login-desc">Connect your Discord account to access the casino.<br>Your balance syncs with the server in real-time.</p>
+    <button class="discord-btn" onclick="loginWithDiscord()">
+      <svg width="22" height="16" viewBox="0 0 22 16" fill="none"><path d="M18.59 1.34A18.1 18.1 0 0014.2.02a.07.07 0 00-.07.03c-.18.32-.38.74-.52 1.07a16.72 16.72 0 00-5.02 0C8.44.77 8.23.35 8.05.05A.07.07 0 008 .02 18.06 18.06 0 003.6 1.34a.06.06 0 00-.03.03C.52 5.77-.31 10.1.1 14.36c0 .02.01.04.03.05a18.18 18.18 0 005.49 2.77.07.07 0 00.08-.03c.42-.58.8-1.19 1.12-1.83a.07.07 0 00-.04-.1 11.97 11.97 0 01-1.71-.82.07.07 0 010-.11c.11-.09.23-.17.34-.26a.07.07 0 01.07-.01c3.59 1.64 7.48 1.64 11.03 0a.07.07 0 01.07.01c.11.09.23.17.34.26a.07.07 0 010 .11c-.54.32-1.12.59-1.71.82a.07.07 0 00-.04.1c.33.64.71 1.25 1.12 1.83a.07.07 0 00.08.03 18.13 18.13 0 005.5-2.77.07.07 0 00.03-.05c.46-4.84-.77-9.04-3.26-12.99a.05.05 0 00-.03-.03zM7.35 11.86c-1.08 0-1.97-.99-1.97-2.21s.87-2.21 1.97-2.21c1.11 0 1.99 1 1.97 2.21 0 1.22-.87 2.21-1.97 2.21zm7.29 0c-1.08 0-1.97-.99-1.97-2.21s.87-2.21 1.97-2.21c1.11 0 1.99 1 1.97 2.21 0 1.22-.86 2.21-1.97 2.21z" fill="white"/></svg>
+      Continue with Discord
+    </button>
+    <p class="login-note">New users receive <strong>1,000 Santen Coins</strong> to start playing</p>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app" class="app hidden">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <span class="logo-s">S</span><span class="logo-coins">ANTEN</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Games</div>
+      <a class="nav-item active" data-page="slots" onclick="showPage('slots')">
+        <span class="nav-icon">🎰</span> Slots
+      </a>
+      <a class="nav-item" data-page="blackjack" onclick="showPage('blackjack')">
+        <span class="nav-icon">🃏</span> Blackjack
+      </a>
+      <a class="nav-item" data-page="roulette" onclick="showPage('roulette')">
+        <span class="nav-icon">🎡</span> Roulette
+      </a>
+      <a class="nav-item" data-page="coinflip" onclick="showPage('coinflip')">
+        <span class="nav-icon">🪙</span> Coinflip
+      </a>
+      <a class="nav-item" data-page="crash" onclick="showPage('crash')">
+        <span class="nav-icon">📈</span> Crash
+      </a>
+      <div class="nav-section-label" style="margin-top:16px">Rewards</div>
+      <a class="nav-item" data-page="daily" onclick="showPage('daily')">
+        <span class="nav-icon">🎁</span> Daily Reward
+      </a>
+      <div class="nav-section-label" style="margin-top:16px">Server</div>
+      <a class="nav-item" data-page="leaderboard" onclick="showPage('leaderboard')">
+        <span class="nav-icon">🏆</span> Leaderboard
+      </a>
+    </nav>
+    <div class="sidebar-user">
+      <img id="user-avatar" src="" class="user-avatar" alt="avatar"/>
+      <div class="user-info">
+        <div id="user-name" class="user-name">Loading...</div>
+        <div class="user-balance"><span id="user-balance">0</span> <span class="sc">ST</span></div>
+      </div>
+      <button class="logout-btn" onclick="logout()" title="Logout">↩</button>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="main-content">
+    <header class="top-bar">
+      <div class="top-bar-title" id="page-title">Slots</div>
+      <div class="top-bar-balance">
+        <span class="balance-label">Balance</span>
+        <span id="header-balance" class="balance-amount">0 ST</span>
+      </div>
+    </header>
+
+    <!-- SLOTS PAGE -->
+    <div id="page-slots" class="page active">
+      <div class="game-container">
+        <div class="slots-machine">
+          <div class="slots-display">
+            <div class="slot-reel-window">
+              <div class="slot-shine-top"></div>
+              <div class="slot-shine-bottom"></div>
+              <div class="slot-reel-strip" id="reel0"></div>
+            </div>
+            <div class="slot-sep"></div>
+            <div class="slot-reel-window">
+              <div class="slot-shine-top"></div>
+              <div class="slot-shine-bottom"></div>
+              <div class="slot-reel-strip" id="reel1"></div>
+            </div>
+            <div class="slot-sep"></div>
+            <div class="slot-reel-window">
+              <div class="slot-shine-top"></div>
+              <div class="slot-shine-bottom"></div>
+              <div class="slot-reel-strip" id="reel2"></div>
+            </div>
+          </div>
+          <div class="slots-result" id="slots-result"></div>
+          <div class="bet-row">
+            <div class="bet-control">
+              <button onclick="adjustBet('slots',-50)">−</button>
+              <span>Bet: <strong id="slots-bet-display">50</strong> ST</span>
+              <button onclick="adjustBet('slots',50)">+</button>
+            </div>
+            <button class="spin-btn" id="slots-btn" onclick="spinSlots()">SPIN</button>
+          </div>
+          <div class="payout-table">
+            <div class="pt-row"><span>💎💎💎</span><span>×50</span></div>
+            <div class="pt-row"><span>7️⃣7️⃣7️⃣</span><span>×25</span></div>
+            <div class="pt-row"><span>🍒🍒🍒</span><span>×10</span></div>
+            <div class="pt-row"><span>⭐⭐⭐</span><span>×5</span></div>
+            <div class="pt-row"><span>Any 2 match</span><span>×2</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BLACKJACK PAGE -->
+    <div id="page-blackjack" class="page">
+      <div class="game-container">
+        <div class="bj-table">
+          <div class="bj-section">
+            <div class="bj-label">Dealer <span id="dealer-score" class="score-badge">0</span></div>
+            <div class="bj-hand" id="dealer-hand"></div>
+          </div>
+          <div class="bj-divider"></div>
+          <div class="bj-section">
+            <div class="bj-label">You <span id="player-score" class="score-badge">0</span></div>
+            <div class="bj-hand" id="player-hand"></div>
+          </div>
+          <div id="bj-result" class="bj-result"></div>
+          <div class="bet-row">
+            <div class="bet-control">
+              <button onclick="adjustBet('bj',-50)">−</button>
+              <span>Bet: <strong id="bj-bet-display">50</strong> ST</span>
+              <button onclick="adjustBet('bj',50)">+</button>
+            </div>
+          </div>
+          <div class="bj-actions" id="bj-actions">
+            <button class="bj-btn deal-btn" onclick="dealBlackjack()">DEAL</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ROULETTE PAGE -->
+    <div id="page-roulette" class="page">
+      <div class="game-container">
+        <div class="roulette-area">
+          <div class="roulette-wheel-wrap">
+            <canvas id="roulette-canvas" width="300" height="300"></canvas>
+            <div class="roulette-ball" id="roulette-ball"></div>
+            <div class="roulette-pointer">▼</div>
+          </div>
+          <div id="roulette-result" class="roulette-result"></div>
+          <div class="roulette-bets">
+            <div class="rb-row">
+              <button class="rb-btn red" onclick="setRouletteBet('red')">Red ×2</button>
+              <button class="rb-btn black" onclick="setRouletteBet('black')">Black ×2</button>
+              <button class="rb-btn green" onclick="setRouletteBet('green')">Green ×14</button>
+            </div>
+            <div class="rb-row">
+              <button class="rb-btn half" onclick="setRouletteBet('low')">1–18 ×2</button>
+              <button class="rb-btn half" onclick="setRouletteBet('high')">19–36 ×2</button>
+              <button class="rb-btn half" onclick="setRouletteBet('odd')">Odd ×2</button>
+              <button class="rb-btn half" onclick="setRouletteBet('even')">Even ×2</button>
+            </div>
+          </div>
+          <div id="roulette-selection" class="roulette-selection">No bet selected</div>
+          <div class="bet-row">
+            <div class="bet-control">
+              <button onclick="adjustBet('roulette',-50)">−</button>
+              <span>Bet: <strong id="roulette-bet-display">50</strong> ST</span>
+              <button onclick="adjustBet('roulette',50)">+</button>
+            </div>
+            <button class="spin-btn" id="roulette-btn" onclick="spinRoulette()">SPIN</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COINFLIP PAGE -->
+    <div id="page-coinflip" class="page">
+      <div class="game-container">
+        <div class="cf-area">
+          <div class="coin-wrap">
+            <div class="coin" id="coin">
+              <div class="coin-face front">S</div>
+              <div class="coin-face back">C</div>
+            </div>
+          </div>
+          <div id="cf-result" class="cf-result"></div>
+          <div class="cf-choices">
+            <button class="cf-choice" id="cf-heads" onclick="setCoinChoice('heads')">HEADS</button>
+            <button class="cf-choice" id="cf-tails" onclick="setCoinChoice('tails')">TAILS</button>
+          </div>
+          <div class="bet-row">
+            <div class="bet-control">
+              <button onclick="adjustBet('cf',-50)">−</button>
+              <span>Bet: <strong id="cf-bet-display">50</strong> ST</span>
+              <button onclick="adjustBet('cf',50)">+</button>
+            </div>
+            <button class="spin-btn" id="cf-btn" onclick="flipCoin()">FLIP</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CRASH PAGE -->
+    <div id="page-crash" class="page">
+      <div class="game-container">
+        <div class="crash-area">
+          <canvas id="crash-canvas" width="600" height="300"></canvas>
+          <div class="crash-multiplier" id="crash-multiplier">1.00×</div>
+          <div id="crash-result" class="crash-result"></div>
+          <div class="bet-row">
+            <div class="bet-control">
+              <button onclick="adjustBet('crash',-50)">−</button>
+              <span>Bet: <strong id="crash-bet-display">50</strong> ST</span>
+              <button onclick="adjustBet('crash',50)">+</button>
+            </div>
+            <button class="spin-btn" id="crash-btn" onclick="startCrash()">BET & START</button>
+            <button class="cashout-btn hidden" id="cashout-btn" onclick="cashOut()">CASH OUT</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DAILY PAGE -->
+    <div id="page-daily" class="page">
+      <div class="game-container">
+        <div class="daily-area">
+          <div class="daily-icon">🎁</div>
+          <div class="daily-title">Daily Reward</div>
+          <div class="daily-desc">Claim your free Santen Coins every 24 hours.<br>Streak bonuses for consecutive days!</div>
+          <div class="streak-display">
+            <div class="streak-label">Current Streak</div>
+            <div class="streak-count" id="streak-count">0 days</div>
+          </div>
+          <div class="daily-reward-preview" id="daily-preview">
+            <div class="reward-amount" id="reward-amount">+250 ST</div>
+            <div class="reward-note">Base reward + streak bonus</div>
+          </div>
+          <button class="spin-btn daily-claim-btn" id="daily-btn" onclick="claimDaily()">CLAIM REWARD</button>
+          <div id="daily-result" class="daily-result"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LEADERBOARD PAGE -->
+    <div id="page-leaderboard" class="page">
+      <div class="game-container">
+        <div class="lb-area">
+          <div class="lb-header">
+            <div class="lb-rank">#</div>
+            <div class="lb-user">Player</div>
+            <div class="lb-bal">Balance</div>
+          </div>
+          <div id="leaderboard-list" class="lb-list">
+            <div class="lb-loading">Loading leaderboard...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

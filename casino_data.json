@@ -1,0 +1,99 @@
+{
+  "users": {
+    "742087955195101254": {
+      "discord_id": "742087955195101254",
+      "balance": 866,
+      "streak": 0,
+      "last_daily": 0,
+      "created_at": 1774658197747,
+      "username": "sshelttt",
+      "avatar": "ab6548dee4ae6b84d3bc17ba0b17fa87"
+    }
+  },
+  "transactions": [
+    {
+      "discord_id": "742087955195101254",
+      "type": "slots",
+      "amount": 50,
+      "result": "🔔🍒🔔",
+      "created_at": 1774658205213
+    },
+    {
+      "discord_id": "742087955195101254",
+      "type": "slots",
+      "amount": -50,
+      "result": "🍋🔔🍒",
+      "created_at": 1774658207882
+    },
+    {
+      "discord_id": "742087955195101254",
+      "type": "crash",
+      "amount": 62,
+      "result": "cashout",
+      "created_at": 1774658251559
+    },
+    {
+      "discord_id": "742087955195101254",
+      "type": "crash",
+      "amount": 54,
+      "result": "cashout",
+      "created_at": 1774658253717
+    },
+    {
+      "discord_id": "742087955195101254",
+      "type": "coinflip",
+      "amount": 50,
+      "result": "heads",
+      "created_at": 1774658258615
+    },
+    {
+      "discord_id": "742087955195101254",
+      "type": "coinflip",
+      "amount": 50,
+      "result": "heads",
+      "created_at": 1774658262026
+    },
+    {
+      "discord_id": "742087955195101254",
+      "type": "coinflip",
+      "amount": 50,
+      "result": "heads",
+      "created_at": 1774658264237
+    },
+    {
+      "discord_id": "742087955195101254",
+      "type": "coinflip",
+      "amount": -50,
+      "result": "tails",
+      "created_at": 1774658265941
+    },
+    {
+      "discord_id": "742087955195101254",
+      "type": "roulette",
+      "amount": -50,
+      "result": "13 black",
+      "created_at": 1774658272755
+    },
+    {
+      "discord_id": "742087955195101254",
+      "type": "slots",
+      "amount": 100,
+      "result": "🔔🔔🔔",
+      "created_at": 1774658287258
+    },
+    {
+      "discord_id": "742087955195101254",
+      "type": "slots",
+      "amount": -50,
+      "result": "🔔🍒🍋",
+      "created_at": 1774658550930
+    },
+    {
+      "discord_id": "742087955195101254",
+      "type": "slots",
+      "amount": -50,
+      "result": "⭐🍒🍋",
+      "created_at": 1774658553889
+    }
+  ]
+}
