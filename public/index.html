@@ -11,60 +11,56 @@
 <body>
 <div class="grain"></div>
 
-<!-- LOGIN SCREEN -->
-<div id="login-screen" class="login-screen">
-  <div class="login-bg">
-    <div class="login-orb orb1"></div>
-    <div class="login-orb orb2"></div>
-    <div class="login-orb orb3"></div>
+<div id="landing-screen" class="landing-screen hidden">
+  <div class="landing-bg">
+    <div class="landing-orb orb1"></div>
+    <div class="landing-orb orb2"></div>
+    <div class="landing-orb orb3"></div>
   </div>
-  <div class="login-card">
-    <div class="login-logo">
-      <span class="logo-s">S</span><span class="logo-coins">ANTEN</span>
-      <div class="logo-sub">CASINO</div>
-    </div>
-    <p class="login-desc">Connect your Discord account to access the casino.<br>Your balance syncs with the server in real-time.</p>
-    <button class="discord-btn" onclick="loginWithDiscord()">
-      <svg width="22" height="16" viewBox="0 0 22 16" fill="none"><path d="M18.59 1.34A18.1 18.1 0 0014.2.02a.07.07 0 00-.07.03c-.18.32-.38.74-.52 1.07a16.72 16.72 0 00-5.02 0C8.44.77 8.23.35 8.05.05A.07.07 0 008 .02 18.06 18.06 0 003.6 1.34a.06.06 0 00-.03.03C.52 5.77-.31 10.1.1 14.36c0 .02.01.04.03.05a18.18 18.18 0 005.49 2.77.07.07 0 00.08-.03c.42-.58.8-1.19 1.12-1.83a.07.07 0 00-.04-.1 11.97 11.97 0 01-1.71-.82.07.07 0 010-.11c.11-.09.23-.17.34-.26a.07.07 0 01.07-.01c3.59 1.64 7.48 1.64 11.03 0a.07.07 0 01.07.01c.11.09.23.17.34.26a.07.07 0 010 .11c-.54.32-1.12.59-1.71.82a.07.07 0 00-.04.1c.33.64.71 1.25 1.12 1.83a.07.07 0 00.08.03 18.13 18.13 0 005.5-2.77.07.07 0 00.03-.05c.46-4.84-.77-9.04-3.26-12.99a.05.05 0 00-.03-.03zM7.35 11.86c-1.08 0-1.97-.99-1.97-2.21s.87-2.21 1.97-2.21c1.11 0 1.99 1 1.97 2.21 0 1.22-.87 2.21-1.97 2.21zm7.29 0c-1.08 0-1.97-.99-1.97-2.21s.87-2.21 1.97-2.21c1.11 0 1.99 1 1.97 2.21 0 1.22-.86 2.21-1.97 2.21z" fill="white"/></svg>
-      Continue with Discord
+  <nav class="landing-nav">
+    <div class="landing-nav-logo"><span class="logo-s">S</span><span class="logo-coins">ANTEN</span></div>
+    <button class="discord-btn small" onclick="loginWithDiscord()">
+      <svg width="18" height="13" viewBox="0 0 22 16" fill="none"><path d="M18.59 1.34A18.1 18.1 0 0014.2.02a.07.07 0 00-.07.03c-.18.32-.38.74-.52 1.07a16.72 16.72 0 00-5.02 0C8.44.77 8.23.35 8.05.05A.07.07 0 008 .02 18.06 18.06 0 003.6 1.34a.06.06 0 00-.03.03C.52 5.77-.31 10.1.1 14.36c0 .02.01.04.03.05a18.18 18.18 0 005.49 2.77.07.07 0 00.08-.03c.42-.58.8-1.19 1.12-1.83a.07.07 0 00-.04-.1 11.97 11.97 0 01-1.71-.82.07.07 0 010-.11c.11-.09.23-.17.34-.26a.07.07 0 01.07-.01c3.59 1.64 7.48 1.64 11.03 0a.07.07 0 01.07.01c.11.09.23.17.34.26a.07.07 0 010 .11c-.54.32-1.12.59-1.71.82a.07.07 0 00-.04.1c.33.64.71 1.25 1.12 1.83a.07.07 0 00.08.03 18.13 18.13 0 005.5-2.77.07.07 0 00.03-.05c.46-4.84-.77-9.04-3.26-12.99a.05.05 0 00-.03-.03zM7.35 11.86c-1.08 0-1.97-.99-1.97-2.21s.87-2.21 1.97-2.21c1.11 0 1.99 1 1.97 2.21 0 1.22-.87 2.21-1.97 2.21zm7.29 0c-1.08 0-1.97-.99-1.97-2.21s.87-2.21 1.97-2.21c1.11 0 1.99 1 1.97 2.21 0 1.22-.86 2.21-1.97 2.21z" fill="white"/></svg>
+      Login
     </button>
-    <p class="login-note">New users receive <strong>1,000 Santen Coins</strong> to start playing</p>
+  </nav>
+  <div class="landing-hero">
+    <div class="landing-badge">🎲 Free to play &nbsp;·&nbsp; Discord linked</div>
+    <h1 class="landing-title"><span class="logo-s">S</span><span class="logo-coins">ANTEN</span><br><span class="landing-casino-word">CASINO</span></h1>
+    <p class="landing-desc">The premier destination for your Discord server's economy.<br>Slots, Blackjack, Roulette, Crash, Plinko and more.</p>
+    <button class="discord-btn large" onclick="loginWithDiscord()">
+      <svg width="22" height="16" viewBox="0 0 22 16" fill="none"><path d="M18.59 1.34A18.1 18.1 0 0014.2.02a.07.07 0 00-.07.03c-.18.32-.38.74-.52 1.07a16.72 16.72 0 00-5.02 0C8.44.77 8.23.35 8.05.05A.07.07 0 008 .02 18.06 18.06 0 003.6 1.34a.06.06 0 00-.03.03C.52 5.77-.31 10.1.1 14.36c0 .02.01.04.03.05a18.18 18.18 0 005.49 2.77.07.07 0 00.08-.03c.42-.58.8-1.19 1.12-1.83a.07.07 0 00-.04-.1 11.97 11.97 0 01-1.71-.82.07.07 0 010-.11c.11-.09.23-.17.34-.26a.07.07 0 01.07-.01c3.59 1.64 7.48 1.64 11.03 0a.07.07 0 01.07.01c.11.09.23.17.34.26a.07.07 0 010 .11c-.54.32-1.12.59-1.71.82a.07.07 0 00-.04.1c.33.64.71 1.25 1.12 1.83a.07.07 0 00.08.03 18.13 18.13 0 005.5-2.77.07.07 0 00.03-.05c.46-4.84-.77-9.04-3.26-12.99a.05.05 0 00-.03-.03zM7.35 11.86c-1.08 0-1.97-.99-1.97-2.21s.87-2.21 1.97-2.21c1.11 0 1.99 1 1.97 2.21 0 1.22-.87 2.21-1.97 2.21zm7.29 0c-1.08 0-1.97-.99-1.97-2.21s.87-2.21 1.97-2.21c1.11 0 1.99 1 1.97 2.21 0 1.22-.86 2.21-1.97 2.21z" fill="white"/></svg>
+      Play with Discord — it's free
+    </button>
+    <p class="landing-note">New players receive <strong>1,000 Santen Coins</strong> free</p>
+  </div>
+  <div class="landing-games-preview">
+    <div class="game-card-preview"><span class="gcp-icon">🎰</span><span>Slots</span></div>
+    <div class="game-card-preview"><span class="gcp-icon">🃏</span><span>Blackjack</span></div>
+    <div class="game-card-preview"><span class="gcp-icon">🎡</span><span>Roulette</span></div>
+    <div class="game-card-preview"><span class="gcp-icon">📈</span><span>Crash</span></div>
+    <div class="game-card-preview"><span class="gcp-icon">🔵</span><span>Plinko</span></div>
+    <div class="game-card-preview"><span class="gcp-icon">🎴</span><span>Hi-Lo</span></div>
   </div>
 </div>
 
-<!-- MAIN APP -->
 <div id="app" class="app hidden">
-
-  <!-- SIDEBAR -->
   <aside class="sidebar">
-    <div class="sidebar-logo">
-      <span class="logo-s">S</span><span class="logo-coins">ANTEN</span>
-    </div>
+    <div class="sidebar-logo"><span class="logo-s">S</span><span class="logo-coins">ANTEN</span></div>
     <nav class="sidebar-nav">
       <div class="nav-section-label">Games</div>
-      <a class="nav-item active" data-page="slots" onclick="showPage('slots')">
-        <span class="nav-icon">🎰</span> Slots
-      </a>
-      <a class="nav-item" data-page="blackjack" onclick="showPage('blackjack')">
-        <span class="nav-icon">🃏</span> Blackjack
-      </a>
-      <a class="nav-item" data-page="roulette" onclick="showPage('roulette')">
-        <span class="nav-icon">🎡</span> Roulette
-      </a>
-      <a class="nav-item" data-page="coinflip" onclick="showPage('coinflip')">
-        <span class="nav-icon">🪙</span> Coinflip
-      </a>
-      <a class="nav-item" data-page="crash" onclick="showPage('crash')">
-        <span class="nav-icon">📈</span> Crash
-      </a>
+      <a class="nav-item active" data-page="slots"       onclick="showPage('slots')">      <span class="nav-icon">🎰</span> Slots      </a>
+      <a class="nav-item"        data-page="blackjack"   onclick="showPage('blackjack')">  <span class="nav-icon">🃏</span> Blackjack  </a>
+      <a class="nav-item"        data-page="roulette"    onclick="showPage('roulette')">   <span class="nav-icon">🎡</span> Roulette   </a>
+      <a class="nav-item"        data-page="coinflip"    onclick="showPage('coinflip')">   <span class="nav-icon">🪙</span> Coinflip   </a>
+      <a class="nav-item"        data-page="crash"       onclick="showPage('crash')">      <span class="nav-icon">📈</span> Crash      </a>
+      <a class="nav-item"        data-page="plinko"      onclick="showPage('plinko')">     <span class="nav-icon">🔵</span> Plinko     </a>
+      <a class="nav-item"        data-page="hilo"        onclick="showPage('hilo')">       <span class="nav-icon">🎴</span> Hi-Lo      </a>
       <div class="nav-section-label" style="margin-top:16px">Rewards</div>
-      <a class="nav-item" data-page="daily" onclick="showPage('daily')">
-        <span class="nav-icon">🎁</span> Daily Reward
-      </a>
-      <div class="nav-section-label" style="margin-top:16px">Server</div>
-      <a class="nav-item" data-page="leaderboard" onclick="showPage('leaderboard')">
-        <span class="nav-icon">🏆</span> Leaderboard
-      </a>
+      <a class="nav-item"        data-page="daily"       onclick="showPage('daily')">      <span class="nav-icon">🎁</span> Daily      </a>
+      <div class="nav-section-label" style="margin-top:16px">Account</div>
+      <a class="nav-item"        data-page="profile"     onclick="showPage('profile')">    <span class="nav-icon">👤</span> Profile    </a>
+      <a class="nav-item"        data-page="leaderboard" onclick="showPage('leaderboard')"><span class="nav-icon">🏆</span> Leaderboard</a>
     </nav>
     <div class="sidebar-user">
       <img id="user-avatar" src="" class="user-avatar" alt="avatar"/>
@@ -76,7 +72,6 @@
     </div>
   </aside>
 
-  <!-- MAIN CONTENT -->
   <main class="main-content">
     <header class="top-bar">
       <div class="top-bar-title" id="page-title">Slots</div>
@@ -86,28 +81,16 @@
       </div>
     </header>
 
-    <!-- SLOTS PAGE -->
+    <!-- SLOTS -->
     <div id="page-slots" class="page active">
       <div class="game-container">
         <div class="slots-machine">
           <div class="slots-display">
-            <div class="slot-reel-window">
-              <div class="slot-shine-top"></div>
-              <div class="slot-shine-bottom"></div>
-              <div class="slot-reel-strip" id="reel0"></div>
-            </div>
+            <div class="slot-reel-window"><div class="slot-shine-top"></div><div class="slot-shine-bottom"></div><div class="slot-reel-strip" id="reel0"></div></div>
             <div class="slot-sep"></div>
-            <div class="slot-reel-window">
-              <div class="slot-shine-top"></div>
-              <div class="slot-shine-bottom"></div>
-              <div class="slot-reel-strip" id="reel1"></div>
-            </div>
+            <div class="slot-reel-window"><div class="slot-shine-top"></div><div class="slot-shine-bottom"></div><div class="slot-reel-strip" id="reel1"></div></div>
             <div class="slot-sep"></div>
-            <div class="slot-reel-window">
-              <div class="slot-shine-top"></div>
-              <div class="slot-shine-bottom"></div>
-              <div class="slot-reel-strip" id="reel2"></div>
-            </div>
+            <div class="slot-reel-window"><div class="slot-shine-top"></div><div class="slot-shine-bottom"></div><div class="slot-reel-strip" id="reel2"></div></div>
           </div>
           <div class="slots-result" id="slots-result"></div>
           <div class="bet-row">
@@ -119,17 +102,20 @@
             <button class="spin-btn" id="slots-btn" onclick="spinSlots()">SPIN</button>
           </div>
           <div class="payout-table">
-            <div class="pt-row"><span>💎💎💎</span><span>×50</span></div>
-            <div class="pt-row"><span>7️⃣7️⃣7️⃣</span><span>×25</span></div>
-            <div class="pt-row"><span>🍒🍒🍒</span><span>×10</span></div>
-            <div class="pt-row"><span>⭐⭐⭐</span><span>×5</span></div>
-            <div class="pt-row"><span>Any 2 match</span><span>×2</span></div>
+            <div class="pt-title">Paytable</div>
+            <div class="pt-row"><span>💎💎💎</span><span class="pt-odds">1 in 134M</span><span>×250</span></div>
+            <div class="pt-row"><span>7️⃣7️⃣7️⃣</span><span class="pt-odds">1 in 32,768</span><span>×100</span></div>
+            <div class="pt-row"><span>🍒🍒🍒</span><span class="pt-odds">1 in 3,641</span><span>×40</span></div>
+            <div class="pt-row"><span>⭐⭐⭐</span><span class="pt-odds">1 in 910</span><span>×15</span></div>
+            <div class="pt-row"><span>🔔🔔🔔</span><span class="pt-odds">1 in 228</span><span>×8</span></div>
+            <div class="pt-row"><span>🍋🍋🍋</span><span class="pt-odds">1 in 53</span><span>×4</span></div>
+            <div class="pt-row"><span>Any 2 match</span><span class="pt-odds">~21%</span><span>×2</span></div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- BLACKJACK PAGE -->
+    <!-- BLACKJACK -->
     <div id="page-blackjack" class="page">
       <div class="game-container">
         <div class="bj-table">
@@ -157,27 +143,26 @@
       </div>
     </div>
 
-    <!-- ROULETTE PAGE -->
+    <!-- ROULETTE -->
     <div id="page-roulette" class="page">
       <div class="game-container">
         <div class="roulette-area">
           <div class="roulette-wheel-wrap">
             <canvas id="roulette-canvas" width="300" height="300"></canvas>
-            <div class="roulette-ball" id="roulette-ball"></div>
             <div class="roulette-pointer">▼</div>
           </div>
           <div id="roulette-result" class="roulette-result"></div>
           <div class="roulette-bets">
             <div class="rb-row">
-              <button class="rb-btn red" onclick="setRouletteBet('red')">Red ×2</button>
-              <button class="rb-btn black" onclick="setRouletteBet('black')">Black ×2</button>
-              <button class="rb-btn green" onclick="setRouletteBet('green')">Green ×14</button>
+              <button class="rb-btn red"   onclick="setRouletteBet('red',this)">Red ×2</button>
+              <button class="rb-btn black" onclick="setRouletteBet('black',this)">Black ×2</button>
+              <button class="rb-btn green" onclick="setRouletteBet('green',this)">Green ×14</button>
             </div>
             <div class="rb-row">
-              <button class="rb-btn half" onclick="setRouletteBet('low')">1–18 ×2</button>
-              <button class="rb-btn half" onclick="setRouletteBet('high')">19–36 ×2</button>
-              <button class="rb-btn half" onclick="setRouletteBet('odd')">Odd ×2</button>
-              <button class="rb-btn half" onclick="setRouletteBet('even')">Even ×2</button>
+              <button class="rb-btn half" onclick="setRouletteBet('low',this)">1–18 ×2</button>
+              <button class="rb-btn half" onclick="setRouletteBet('high',this)">19–36 ×2</button>
+              <button class="rb-btn half" onclick="setRouletteBet('odd',this)">Odd ×2</button>
+              <button class="rb-btn half" onclick="setRouletteBet('even',this)">Even ×2</button>
             </div>
           </div>
           <div id="roulette-selection" class="roulette-selection">No bet selected</div>
@@ -193,14 +178,14 @@
       </div>
     </div>
 
-    <!-- COINFLIP PAGE -->
+    <!-- COINFLIP -->
     <div id="page-coinflip" class="page">
       <div class="game-container">
         <div class="cf-area">
           <div class="coin-wrap">
             <div class="coin" id="coin">
               <div class="coin-face front">S</div>
-              <div class="coin-face back">C</div>
+              <div class="coin-face back">T</div>
             </div>
           </div>
           <div id="cf-result" class="cf-result"></div>
@@ -220,7 +205,7 @@
       </div>
     </div>
 
-    <!-- CRASH PAGE -->
+    <!-- CRASH -->
     <div id="page-crash" class="page">
       <div class="game-container">
         <div class="crash-area">
@@ -240,7 +225,58 @@
       </div>
     </div>
 
-    <!-- DAILY PAGE -->
+    <!-- PLINKO -->
+    <div id="page-plinko" class="page">
+      <div class="game-container">
+        <div class="plinko-area">
+          <canvas id="plinko-canvas" width="500" height="400"></canvas>
+          <div id="plinko-result" class="plinko-result"></div>
+          <div class="bet-row">
+            <div class="bet-control">
+              <button onclick="adjustBet('plinko',-50)">−</button>
+              <span>Bet: <strong id="plinko-bet-display">50</strong> ST</span>
+              <button onclick="adjustBet('plinko',50)">+</button>
+            </div>
+            <button class="spin-btn" id="plinko-btn" onclick="dropPlinko()">DROP BALL</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HI-LO -->
+    <div id="page-hilo" class="page">
+      <div class="game-container">
+        <div class="hilo-area">
+          <div class="hilo-card-wrap">
+            <div class="hilo-card" id="hilo-card">
+              <div class="hilo-card-rank" id="hilo-card-face">?</div>
+              <div class="hilo-card-suit" id="hilo-card-suit"></div>
+            </div>
+          </div>
+          <div class="hilo-streak-bar">
+            <div class="hilo-stat"><span class="hilo-stat-label">Streak</span><span id="hilo-streak" class="hilo-stat-val">0</span></div>
+            <div class="hilo-stat"><span class="hilo-stat-label">Multiplier</span><span id="hilo-mult" class="hilo-stat-val gold">1.00×</span></div>
+            <div class="hilo-stat"><span class="hilo-stat-label">Potential</span><span id="hilo-potential" class="hilo-stat-val gold">0 ST</span></div>
+          </div>
+          <div id="hilo-result" class="hilo-result"></div>
+          <div class="hilo-actions" id="hilo-actions">
+            <button class="hilo-btn higher" id="hilo-higher" onclick="hiloGuess('higher')" disabled>⬆ Higher</button>
+            <button class="hilo-btn cashout-hilo" id="hilo-cashout" onclick="hiloCashout()" style="display:none">💰 Cash Out</button>
+            <button class="hilo-btn lower" id="hilo-lower" onclick="hiloGuess('lower')" disabled>⬇ Lower</button>
+          </div>
+          <div class="bet-row">
+            <div class="bet-control">
+              <button onclick="adjustBet('hilo',-50)">−</button>
+              <span>Bet: <strong id="hilo-bet-display">50</strong> ST</span>
+              <button onclick="adjustBet('hilo',50)">+</button>
+            </div>
+            <button class="spin-btn" id="hilo-start-btn" onclick="startHilo()">DEAL CARD</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DAILY -->
     <div id="page-daily" class="page">
       <div class="game-container">
         <div class="daily-area">
@@ -251,7 +287,7 @@
             <div class="streak-label">Current Streak</div>
             <div class="streak-count" id="streak-count">0 days</div>
           </div>
-          <div class="daily-reward-preview" id="daily-preview">
+          <div class="daily-reward-preview">
             <div class="reward-amount" id="reward-amount">+250 ST</div>
             <div class="reward-note">Base reward + streak bonus</div>
           </div>
@@ -261,7 +297,26 @@
       </div>
     </div>
 
-    <!-- LEADERBOARD PAGE -->
+    <!-- PROFILE -->
+    <div id="page-profile" class="page">
+      <div class="game-container wide">
+        <div class="profile-header">
+          <img id="profile-avatar" src="" class="profile-avatar" alt="">
+          <div class="profile-info">
+            <div id="profile-name" class="profile-name"></div>
+            <div id="profile-balance" class="profile-balance-big"></div>
+            <div id="profile-streak" class="profile-streak"></div>
+          </div>
+        </div>
+        <div class="stats-grid" id="stats-grid"><div class="stat-card-loading">Loading stats...</div></div>
+        <div class="profile-history">
+          <div class="ph-title">Recent Activity</div>
+          <div id="profile-history-list" class="ph-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LEADERBOARD -->
     <div id="page-leaderboard" class="page">
       <div class="game-container">
         <div class="lb-area">
@@ -270,16 +325,13 @@
             <div class="lb-user">Player</div>
             <div class="lb-bal">Balance</div>
           </div>
-          <div id="leaderboard-list" class="lb-list">
-            <div class="lb-loading">Loading leaderboard...</div>
-          </div>
+          <div id="leaderboard-list" class="lb-list"><div class="lb-loading">Loading...</div></div>
         </div>
       </div>
     </div>
 
   </main>
 </div>
-
 <script src="app.js"></script>
 </body>
 </html>
