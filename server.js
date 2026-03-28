@@ -76,24 +76,9 @@ app.get('/debug', (req, res) => res.json({
 }));
 
 // ── Balance helpers ───────────────────────────────────────
-app.post('/api/balance/deduct', requireAuth, (req, res) => {
-  const {amount, context} = req.body;
-  // Re-fetch balance — never trust req.user which could be stale
-  const fresh = db.getUser(req.user.discord_id);
-  if (!fresh || fresh.balance < amount) return res.status(400).json({error:'Insufficient balance'});
-  // Store bet in session so settle endpoint can verify it
-  if (context === 'blackjack') req.session.bjBet = amount;
-  res.json({ newBalance: db.addBalance(req.user.discord_id, -amount).balance });
-});
-app.post('/api/balance/add', requireAuth, (req, res) => {
-  const {amount} = req.body;
-  // /api/balance/add is ONLY used for blackjack push/win settlements now
-  // Cap at 10x current balance as a sanity check
-  const fresh = db.getUser(req.user.discord_id);
-  const cap = Math.min(amount, (fresh.balance + 10000) * 10); // generous but bounded
-  if (cap <= 0) return res.status(400).json({error:'Invalid amount'});
-  res.json({ newBalance: db.addBalance(req.user.discord_id, cap).balance });
-});
+// /api/balance/add and /api/balance/deduct have been REMOVED.
+// All balance changes happen internally in game routes only.
+// Calling these from the console does nothing — the endpoints don't exist.
 
 
 // ── Rate limiting (anti-spam/cheat) ───────────────────────
@@ -166,19 +151,34 @@ app.post('/api/slots', requireAuth, (req, res) => {
 
 // ── BLACKJACK (fair) ──────────────────────────────────────
 // Pure client-side with server only handling balance
+// Blackjack deal — deducts bet atomically and stores it in session
+app.post('/api/blackjack/deal', requireAuth, (req, res) => {
+  const {bet} = req.body;
+  if (!bet || bet < 10) return res.status(400).json({error:'Min bet 10 ST'});
+  const fresh = db.getUser(req.user.discord_id);
+  if (!fresh || fresh.balance < bet) return res.status(400).json({error:'Insufficient balance'});
+  // Deduct bet and store in session atomically
+  db.addBalance(req.user.discord_id, -bet);
+  req.session.bjBet = bet;
+  req.session.bjActive = true;
+  res.json({ newBalance: fresh.balance - bet });
+});
+
+// Blackjack settle — only pays out if a deal was recorded in the session
 app.post('/api/blackjack/settle', requireAuth, (req, res) => {
-  const {bet, result} = req.body;
-  // Validate result is a known value — reject anything else
+  const {result} = req.body;
+  // Validate result is a known value — reject anything fabricated
   if (!['blackjack','win','push','lose'].includes(result)) return res.status(400).json({error:'Invalid result'});
-  if (!bet||bet<10) return res.status(400).json({error:'Min bet 10 ST'});
-  // Cap bet to what was stored in session to prevent inflated payouts
-  const sessionBet = req.session.bjBet || bet;
-  const safeBet = Math.min(bet, sessionBet);
-  req.session.bjBet = null; // clear after use
+  // Must have an active game started via /blackjack/deal
+  if (!req.session.bjActive || !req.session.bjBet) return res.status(400).json({error:'No active blackjack game'});
+  const safeBet = req.session.bjBet;
+  req.session.bjBet = null;
+  req.session.bjActive = false;
   let payout = 0;
   if(result==='blackjack') payout=Math.floor(safeBet*2.5);
   else if(result==='win') payout=safeBet*2;
   else if(result==='push') payout=safeBet;
+  // 'lose' payout = 0, bet already gone
   const profit = payout - safeBet;
   const updated = db.addBalance(req.user.discord_id, profit);
   db.logTransaction(req.user.discord_id,'blackjack',profit,result);
@@ -236,7 +236,7 @@ app.post('/api/crash/start', requireAuth, (req, res) => {
   const updated=db.addBalance(req.user.discord_id,-bet);
   // Store the entire game state server-side — client sends nothing on cashout
   req.session.crash={bet,crashPoint,startTime:Date.now(),active:true};
-  res.json({crashPoint,newBalance:updated.balance});
+  res.json({newBalance:updated.balance}); // crashPoint intentionally NOT sent to client
 });
 app.post('/api/crash/cashout', requireAuth, (req, res) => {
   const game=req.session.crash;
@@ -453,6 +453,8 @@ app.post('/api/chat/send', requireAuth, async (req, res) => {
     const target=allUsers.find(u=>u.username.toLowerCase()===targetName);
     if(!target)return res.status(400).json({error:`User ${mention} not found`});
     if(u.balance<amount)return res.status(400).json({error:'Insufficient balance'});
+    const freshSender=db.getUser(u.discord_id);
+    if(!freshSender||freshSender.balance<amount)return res.status(400).json({error:'Insufficient balance'});
     db.addBalance(u.discord_id,-amount);
     db.addBalance(target.discord_id,amount);
     const sysMsg=db.addChatMessage('system','💸 System','',`**${u.username}** sent **${amount.toLocaleString()} ST** to **${target.username}**!`);
@@ -474,7 +476,8 @@ app.post('/api/chat/send', requireAuth, async (req, res) => {
   }
   if(message.startsWith('.flip ')) {
     const amount=parseInt(message.split(' ')[1]);
-    if(!isNaN(amount)&&amount>0&&u.balance>=amount) {
+    const freshU=db.getUser(u.discord_id); // re-fetch to prevent stale balance
+    if(!isNaN(amount)&&amount>0&&freshU&&freshU.balance>=amount) {
       const won=Math.random()<0.5;
       if(won) db.addBalance(u.discord_id,amount); else db.addBalance(u.discord_id,-amount);
       const sysMsg=db.addChatMessage('system','🪙 Coinflip','',`**${u.username}** flipped ${amount.toLocaleString()} ST and ${won?`**WON** 🎉`:'**LOST** 💀'}!`);
@@ -486,6 +489,28 @@ app.post('/api/chat/send', requireAuth, async (req, res) => {
   const msg=db.addChatMessage(u.discord_id,u.username,u.avatar,message);
   broadcastSSE('chat',msg);
   res.json({ok:true,msg});
+});
+
+
+// Crash alive check — client polls this to know when the game crashed
+// Returns crashed:true only AFTER the crash point is passed, revealing the crash
+// multiplier only AFTER it has already happened (so client can't peek ahead)
+app.get('/api/crash/alive', requireAuth, (req, res) => {
+  const game = req.session.crash;
+  if (!game || !game.active) {
+    // No active game — tell client it's not running
+    return res.json({ crashed: false, running: false });
+  }
+  const elapsed = (Date.now() - game.startTime) / 1000;
+  const serverMult = parseFloat(Math.pow(Math.E, 0.1 * elapsed).toFixed(2));
+  if (serverMult >= game.crashPoint) {
+    // Mark as crashed in session
+    game.active = false;
+    req.session.crash = game;
+    // NOW reveal the crash point — only after it already happened
+    return res.json({ crashed: true, at: game.crashPoint, running: false });
+  }
+  return res.json({ crashed: false, running: true });
 });
 
 // ── LEADERBOARD / STATS / HISTORY ────────────────────────
