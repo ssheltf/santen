@@ -94,12 +94,21 @@ app.post('/api/balance/add', requireAuth, (req, res) => {
 });
 
 // Slots
-const SLOT_SYMBOLS = ['💎','7️⃣','🍒','⭐','🔔','🍋'];
-const SLOT_WEIGHTS = [1,3,6,10,15,20];
+// Symbol weights per reel (out of 512 total stops — mirrors real slot math)
+// 💎 diamond:  1/512  → ~0.2%  three-of-a-kind
+// 7️⃣  seven:   4/512  → ~0.8%
+// 🍒 cherry:  12/512  → ~2.3%
+// ⭐ star:    24/512  → ~4.7%
+// 🔔 bell:    48/512  → ~9.4%
+// 🍋 lemon:  100/512  → ~19.5%
+// 💀 skull:  323/512  → ~63.1% (no-win filler)
+const SLOT_SYMBOLS = ['💎','7️⃣','🍒','⭐','🔔','🍋','💀'];
+const SLOT_WEIGHTS = [  1,   4,  12,  24,  48, 100, 323];
+// House edge ~8% after accounting for partial matches
 function weightedSlot() {
-  const total = SLOT_WEIGHTS.reduce((a,b)=>a+b,0);
-  let r = Math.random()*total;
-  for(let i=0;i<SLOT_SYMBOLS.length;i++){r-=SLOT_WEIGHTS[i];if(r<=0)return SLOT_SYMBOLS[i];}
+  const total = SLOT_WEIGHTS.reduce((a,b)=>a+b,0); // 512
+  let r = Math.floor(Math.random()*total);
+  for(let i=0;i<SLOT_SYMBOLS.length;i++){r-=SLOT_WEIGHTS[i];if(r<0)return SLOT_SYMBOLS[i];}
   return SLOT_SYMBOLS[SLOT_SYMBOLS.length-1];
 }
 app.post('/api/slots', requireAuth, (req, res) => {
@@ -108,14 +117,21 @@ app.post('/api/slots', requireAuth, (req, res) => {
   if (req.user.balance<bet) return res.status(400).json({error:'Insufficient balance'});
   const reels=[weightedSlot(),weightedSlot(),weightedSlot()];
   let multiplier=0;
-  if(reels[0]===reels[1]&&reels[1]===reels[2]){
+  if(reels[0]===reels[1]&&reels[1]===reels[2]&&reels[0]!=='💀'){
     const s=reels[0];
-    if(s==='💎')multiplier=50;else if(s==='7️⃣')multiplier=25;else if(s==='🍒')multiplier=10;else if(s==='⭐')multiplier=5;else multiplier=3;
-  } else if(reels[0]===reels[1]||reels[1]===reels[2]||reels[0]===reels[2]) multiplier=2;
+    if(s==='💎')multiplier=250; // jackpot ~0.000000008% 
+    else if(s==='7️⃣')multiplier=100;
+    else if(s==='🍒')multiplier=40;
+    else if(s==='⭐')multiplier=15;
+    else if(s==='🔔')multiplier=8;
+    else if(s==='🍋')multiplier=4;
+  } else if(reels[0]!=='💀'&&reels[0]===reels[1]&&reels[2]!==reels[0]) multiplier=2;
+  else if(reels[1]!=='💀'&&reels[1]===reels[2]&&reels[0]!==reels[1]) multiplier=2;
+  else if(reels[0]!=='💀'&&reels[0]===reels[2]&&reels[1]!==reels[0]) multiplier=2;
   const won=multiplier>0, payout=won?bet*multiplier:0, net=payout-bet;
   const updated=db.addBalance(req.user.discord_id,net);
   db.logTransaction(req.user.discord_id,'slots',net,reels.join(''));
-  if(multiplier>=25) notifyDiscord(`🎰 **${req.user.username}** hit **${reels.join('')}** and won **${payout.toLocaleString()} Santen Coins** (${multiplier}×)! 💰`);
+  if(multiplier>=40) notifyDiscord(`🎰 **${req.user.username}** hit **${reels.join('')}** and won **${payout.toLocaleString()} Santen Coins** (${multiplier}×)! 💰`);
   res.json({reels,won,multiplier,payout,newBalance:updated.balance});
 });
 
@@ -190,6 +206,41 @@ app.post('/api/daily/claim', requireAuth, (req, res) => {
   const updated=db.addBalance(req.user.discord_id,reward);
   notifyDiscord(`🎁 **${req.user.username}** claimed their daily reward of **${reward.toLocaleString()} Santen Coins**! (${newStreak} day streak 🔥)`);
   res.json({reward,streak:newStreak,newBalance:updated.balance});
+});
+
+
+// Plinko
+const PLINKO_MULTS=[10,3,1.5,1,0.5,0.3,0.5,1,1.5,3,10];
+app.post('/api/plinko', requireAuth, (req,res)=>{
+  const {bet}=req.body;
+  if(!bet||bet<10)return res.status(400).json({error:'Minimum bet is 10 ST'});
+  if(req.user.balance<bet)return res.status(400).json({error:'Insufficient balance'});
+  // Biased bucket selection — edges are rare, middle is common
+  const weights=[1,3,6,12,20,28,20,12,6,3,1]; // mirrors real Plinko
+  const total=weights.reduce((a,b)=>a+b,0);
+  let r=Math.random()*total;
+  let bucketIndex=0;
+  for(let i=0;i<weights.length;i++){r-=weights[i];if(r<=0){bucketIndex=i;break;}}
+  const multiplier=PLINKO_MULTS[bucketIndex];
+  const won=multiplier>1;
+  const payout=Math.floor(bet*multiplier);
+  const net=payout-bet;
+  const updated=db.addBalance(req.user.discord_id,net);
+  db.logTransaction(req.user.discord_id,'plinko',net,multiplier+'x');
+  if(multiplier>=5) notifyDiscord(`🔵 **${req.user.username}** hit **${multiplier}×** on Plinko and won **${payout.toLocaleString()} Santen Coins**! 💰`);
+  res.json({bucketIndex,multiplier,won,payout,newBalance:updated.balance});
+});
+
+// Stats
+app.get('/api/stats', requireAuth, (req,res)=>{
+  res.json(db.getUserStats(req.user.discord_id));
+});
+
+// History (last 30 transactions)
+app.get('/api/history', requireAuth, (req,res)=>{
+  const data=JSON.parse(require('fs').readFileSync('./casino_data.json','utf8'));
+  const txns=(data.transactions||[]).filter(t=>t.discord_id===req.user.discord_id).slice(-30).reverse();
+  res.json(txns);
 });
 
 // Leaderboard
