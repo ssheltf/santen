@@ -77,11 +77,22 @@ app.get('/debug', (req, res) => res.json({
 
 // ── Balance helpers ───────────────────────────────────────
 app.post('/api/balance/deduct', requireAuth, (req, res) => {
-  if (req.user.balance < req.body.amount) return res.status(400).json({error:'Insufficient balance'});
-  res.json({ newBalance: db.addBalance(req.user.discord_id, -req.body.amount).balance });
+  const {amount, context} = req.body;
+  // Re-fetch balance — never trust req.user which could be stale
+  const fresh = db.getUser(req.user.discord_id);
+  if (!fresh || fresh.balance < amount) return res.status(400).json({error:'Insufficient balance'});
+  // Store bet in session so settle endpoint can verify it
+  if (context === 'blackjack') req.session.bjBet = amount;
+  res.json({ newBalance: db.addBalance(req.user.discord_id, -amount).balance });
 });
 app.post('/api/balance/add', requireAuth, (req, res) => {
-  res.json({ newBalance: db.addBalance(req.user.discord_id, req.body.amount).balance });
+  const {amount} = req.body;
+  // /api/balance/add is ONLY used for blackjack push/win settlements now
+  // Cap at 10x current balance as a sanity check
+  const fresh = db.getUser(req.user.discord_id);
+  const cap = Math.min(amount, (fresh.balance + 10000) * 10); // generous but bounded
+  if (cap <= 0) return res.status(400).json({error:'Invalid amount'});
+  res.json({ newBalance: db.addBalance(req.user.discord_id, cap).balance });
 });
 
 
@@ -156,15 +167,19 @@ app.post('/api/slots', requireAuth, (req, res) => {
 // ── BLACKJACK (fair) ──────────────────────────────────────
 // Pure client-side with server only handling balance
 app.post('/api/blackjack/settle', requireAuth, (req, res) => {
-  const {bet, result} = req.body; // result: 'blackjack'|'win'|'push'|'lose'
+  const {bet, result} = req.body;
+  // Validate result is a known value — reject anything else
+  if (!['blackjack','win','push','lose'].includes(result)) return res.status(400).json({error:'Invalid result'});
   if (!bet||bet<10) return res.status(400).json({error:'Min bet 10 ST'});
-  if (req.user.balance + bet < bet) return res.status(400).json({error:'Insufficient balance'});
+  // Cap bet to what was stored in session to prevent inflated payouts
+  const sessionBet = req.session.bjBet || bet;
+  const safeBet = Math.min(bet, sessionBet);
+  req.session.bjBet = null; // clear after use
   let payout = 0;
-  if(result==='blackjack') payout=Math.floor(bet*2.5);
-  else if(result==='win') payout=bet*2;
-  else if(result==='push') payout=bet;
-  // 'lose' = 0 payout, already deducted
-  const profit = payout - bet;
+  if(result==='blackjack') payout=Math.floor(safeBet*2.5);
+  else if(result==='win') payout=safeBet*2;
+  else if(result==='push') payout=safeBet;
+  const profit = payout - safeBet;
   const updated = db.addBalance(req.user.discord_id, profit);
   db.logTransaction(req.user.discord_id,'blackjack',profit,result);
   if(profit>0) checkBigWin(req.user.username,'blackjack',profit,null);
@@ -214,20 +229,40 @@ function genCrashPoint(){const r=Math.random();if(r<0.04)return 1.0;return Math.
 app.post('/api/crash/start', requireAuth, (req, res) => {
   const {bet}=req.body;
   if(!bet||bet<10)return res.status(400).json({error:'Min bet 10 ST'});
-  if(req.user.balance<bet)return res.status(400).json({error:'Insufficient balance'});
+  // Re-fetch balance from DB — never trust client-side balance
+  const freshUser=db.getUser(req.user.discord_id);
+  if(!freshUser||freshUser.balance<bet)return res.status(400).json({error:'Insufficient balance'});
   const crashPoint=genCrashPoint();
   const updated=db.addBalance(req.user.discord_id,-bet);
+  // Store the entire game state server-side — client sends nothing on cashout
+  req.session.crash={bet,crashPoint,startTime:Date.now(),active:true};
   res.json({crashPoint,newBalance:updated.balance});
 });
 app.post('/api/crash/cashout', requireAuth, (req, res) => {
-  const {payout,bet}=req.body;
-  // Anti-cheat: verify payout is reasonable (max 1000x the bet)
-  const maxPayout = (bet||0) * 1000;
-  const safe=Math.min(Math.max(0,payout), maxPayout, 500000);
+  const game=req.session.crash;
+  // Reject if no active game exists in session
+  if(!game||!game.active)return res.status(400).json({error:'No active crash game'});
+  // Calculate multiplier server-side from elapsed time — same formula as client
+  // m = e^(0.1 * elapsed_seconds)
+  const elapsed=(Date.now()-game.startTime)/1000;
+  const serverMult=parseFloat(Math.pow(Math.E,0.1*elapsed).toFixed(2));
+  // If server says it already crashed, reject cashout
+  if(serverMult>=game.crashPoint){
+    game.active=false;req.session.crash=game;
+    return res.status(400).json({error:'Too late — already crashed!'});
+  }
+  // Use server-calculated multiplier — client payout value is completely ignored
+  const payout=Math.floor(game.bet*serverMult);
+  const safe=Math.min(payout,500000); // hard cap just in case
+  game.active=false;req.session.crash=game;
   const updated=db.addBalance(req.user.discord_id,safe);
-  const profit=safe-(bet||0);
+  const profit=safe-game.bet;
   db.logTransaction(req.user.discord_id,'crash',profit,'cashout');
-  db.recordBet(req.user.discord_id,0,0); // just increment games_played
+  db.recordBet(req.user.discord_id,0,0);
+  checkBigWin(req.user.username,'crash',profit,serverMult,1000);
+  // Return profit so client can display it (but server calculated it, not client)
+  res.json({newBalance:updated.balance,profit,multiplier:serverMult});
+  return;
   checkBigWin(req.user.username,'crash',profit,null,1000);
   res.json({newBalance:updated.balance});
 });
