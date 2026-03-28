@@ -23,6 +23,7 @@ const DISCORD_CLIENT_ID     = process.env.DISCORD_CLIENT_ID;
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
 const DISCORD_REDIRECT_URI  = process.env.DISCORD_REDIRECT_URI || `http://localhost:${PORT}/auth/discord/callback`;
 const DISCORD_BOT_TOKEN     = process.env.DISCORD_BOT_TOKEN;
+const CASINO_URL            = process.env.CASINO_URL || `http://localhost:${PORT}`;
 const DISCORD_GUILD_ID      = process.env.DISCORD_GUILD_ID;
 
 app.get('/auth/discord', (req, res) => {
@@ -37,7 +38,7 @@ app.get('/auth/discord', (req, res) => {
 
 app.get('/auth/discord/callback', async (req, res) => {
   const { code } = req.query;
-  if (!code) return res.redirect('/');
+  if (!code) return res.redirect(CASINO_URL);
   try {
     const tokenRes = await axios.post('https://discord.com/api/oauth2/token',
       new URLSearchParams({
@@ -60,10 +61,10 @@ app.get('/auth/discord/callback', async (req, res) => {
       notifyDiscord(`🎰 **${du.username}** just joined **Santen Casino**! They received **1,000 Santen Coins** to start. Good luck!`);
     }
     req.session.discord_id = du.id;
-    res.redirect('/');
+    res.redirect(CASINO_URL);
   } catch (e) {
     console.error('OAuth error:', e.response?.data || e.message);
-    res.redirect('/');
+    res.redirect(CASINO_URL);
   }
 });
 
@@ -203,5 +204,18 @@ async function notifyDiscord(message) {
     await axios.post(`https://discord.com/api/v10/channels/${ch.id}/messages`,{content:message},{headers:{Authorization:`Bot ${DISCORD_BOT_TOKEN}`}});
   } catch(e){}
 }
+
+// Debug route — visit /debug to check env vars are loaded correctly
+app.get('/debug', (req, res) => {
+  res.json({
+    DISCORD_CLIENT_ID:    DISCORD_CLIENT_ID ? DISCORD_CLIENT_ID.slice(0,6)+'...' : 'MISSING',
+    DISCORD_CLIENT_SECRET:DISCORD_CLIENT_SECRET ? 'SET' : 'MISSING',
+    DISCORD_REDIRECT_URI: DISCORD_REDIRECT_URI,
+    CASINO_URL:           CASINO_URL,
+    DISCORD_BOT_TOKEN:    DISCORD_BOT_TOKEN ? 'SET' : 'MISSING',
+    DISCORD_GUILD_ID:     DISCORD_GUILD_ID || 'MISSING',
+    NODE_ENV:             process.env.NODE_ENV || 'not set',
+  });
+});
 
 app.listen(PORT, ()=>console.log(`\n🎰 Santen Casino running at http://localhost:${PORT}\n`));
