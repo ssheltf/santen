@@ -295,21 +295,48 @@ async function flipCoin(){
   if(!coinChoice){alert('Choose heads or tails!');return;}
   const btn=document.getElementById('cf-btn');btn.disabled=true;
   document.getElementById('cf-result').textContent='';
-  const coin=document.getElementById('coin');coin.classList.add('flipping');
+  const coin=document.getElementById('coin');
+
   try{
     const data=await apiPost('/api/coinflip',{bet:bets.cf,choice:coinChoice});
-    setTimeout(()=>{
-      coin.classList.remove('flipping');
-      // Show correct face
-      if(data.result==='tails') coin.style.transform='rotateY(180deg)';
-      else coin.style.transform='rotateY(0deg)';
-      updateUserUI(data.newBalance);
-      const res=document.getElementById('cf-result');
-      res.textContent=data.won?`✓ ${data.result.toUpperCase()} — +${fmtNum(data.payout)} ST`:`✗ ${data.result.toUpperCase()} — Better luck!`;
-      res.style.color=data.won?'var(--gold)':'var(--red)';
-      btn.disabled=false;
-    },1300);
-  }catch(e){coin.classList.remove('flipping');showErr('cf-result',e.message);btn.disabled=false;}
+
+    // Smooth RAF-based flip — no CSS animation jank
+    // Heads = lands on 0deg (front), Tails = lands on 180deg (back)
+    const finalAngle = data.result==='tails' ? 180 : 0;
+    // Always spin a clean number of full rotations (10) plus land on correct face
+    const totalRotation = 10 * 360 + finalAngle;
+    const duration = 1600; // ms
+    const startTime = performance.now();
+    let currentAngle = 0;
+
+    // Easing: fast in the middle, slow at start and end (real coin feel)
+    function easeInOutQuart(t) {
+      return t < 0.5 ? 8*t*t*t*t : 1 - Math.pow(-2*t+2, 4)/2;
+    }
+
+    function frame(now) {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = easeInOutQuart(progress);
+      currentAngle = totalRotation * eased;
+      coin.style.transform = `rotateY(${currentAngle}deg)`;
+
+      if (progress < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        // Snap to exact final angle
+        coin.style.transform = `rotateY(${finalAngle}deg)`;
+        // Update balance AFTER animation
+        updateUserUI(data.newBalance);
+        const res=document.getElementById('cf-result');
+        res.textContent=data.won?`✓ ${data.result.toUpperCase()} — +${fmtNum(data.payout)} ST`:`✗ ${data.result.toUpperCase()} — Better luck!`;
+        res.style.color=data.won?'var(--gold)':'var(--red)';
+        btn.disabled=false;
+      }
+    }
+    requestAnimationFrame(frame);
+
+  }catch(e){showErr('cf-result',e.message);btn.disabled=false;}
 }
 
 // ── CRASH (smooth, Stake-style) ────────────────────────────
