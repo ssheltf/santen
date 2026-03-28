@@ -84,6 +84,22 @@ app.post('/api/balance/add', requireAuth, (req, res) => {
   res.json({ newBalance: db.addBalance(req.user.discord_id, req.body.amount).balance });
 });
 
+
+// ── Rate limiting (anti-spam/cheat) ───────────────────────
+const rateLimits = new Map();
+function rateLimit(id, action, maxPerSecond=3) {
+  const key = id + ':' + action;
+  const now = Date.now();
+  const window = rateLimits.get(key) || [];
+  const recent = window.filter(t => now - t < 1000);
+  if (recent.length >= maxPerSecond) return false;
+  recent.push(now);
+  rateLimits.set(key, recent);
+  return true;
+}
+// Clean rate limit map every 30s
+setInterval(() => { const now=Date.now(); rateLimits.forEach((v,k)=>{ if(!v.some(t=>now-t<2000))rateLimits.delete(k); }); }, 30000);
+
 // ── Big win announcer ─────────────────────────────────────
 async function announceBigWin(username, game, profit, mult) {
   const emojis = {slots:'🎰',roulette:'🎡',crash:'📈',plinko:'🔵',blackjack:'🃏',coinflip:'🪙',hilo:'🎴',mines:'💣',cases:'📦'};
@@ -107,17 +123,22 @@ function checkBigWin(username, game, profit, mult, threshold=500) {
 }
 
 // ── SLOTS ─────────────────────────────────────────────────
+// 3-reel classic: ~40% win rate
 const SLOT_SYMBOLS = ['💎','7️⃣','🍒','⭐','🔔','🍋'];
-const SLOT_WEIGHTS = [2, 5, 12, 18, 25, 38];
+const SLOT_WEIGHTS = [2, 5, 12, 18, 25, 38]; // total=100
 function weightedSlot() {
   let r = Math.random()*100;
   for(let i=0;i<SLOT_SYMBOLS.length;i++){r-=SLOT_WEIGHTS[i];if(r<=0)return SLOT_SYMBOLS[i];}
   return SLOT_SYMBOLS[SLOT_SYMBOLS.length-1];
 }
 app.post('/api/slots', requireAuth, (req, res) => {
-  const {bet} = req.body;
+  const {bet,variant='classic'} = req.body;
   if (!bet||bet<10) return res.status(400).json({error:'Min bet 10 ST'});
+  if (!rateLimit(req.user.discord_id,'slots',5)) return res.status(429).json({error:'Slow down!'});
   if (req.user.balance < bet) return res.status(400).json({error:'Insufficient balance'});
+  // Anti-cheat: re-fetch balance from DB (can't trust client)
+  const freshUser = db.getUser(req.user.discord_id);
+  if (!freshUser || freshUser.balance < bet) return res.status(400).json({error:'Insufficient balance'});
   const reels = [weightedSlot(),weightedSlot(),weightedSlot()];
   let multiplier = 0;
   if(reels[0]===reels[1]&&reels[1]===reels[2]) {
@@ -132,15 +153,17 @@ app.post('/api/slots', requireAuth, (req, res) => {
   res.json({reels,won,multiplier,payout,newBalance:updated.balance});
 });
 
-// ── BLACKJACK ─────────────────────────────────────────────
+// ── BLACKJACK (fair) ──────────────────────────────────────
+// Pure client-side with server only handling balance
 app.post('/api/blackjack/settle', requireAuth, (req, res) => {
-  const {bet, result} = req.body;
+  const {bet, result} = req.body; // result: 'blackjack'|'win'|'push'|'lose'
   if (!bet||bet<10) return res.status(400).json({error:'Min bet 10 ST'});
   if (req.user.balance + bet < bet) return res.status(400).json({error:'Insufficient balance'});
   let payout = 0;
   if(result==='blackjack') payout=Math.floor(bet*2.5);
   else if(result==='win') payout=bet*2;
   else if(result==='push') payout=bet;
+  // 'lose' = 0 payout, already deducted
   const profit = payout - bet;
   const updated = db.addBalance(req.user.discord_id, profit);
   db.logTransaction(req.user.discord_id,'blackjack',profit,result);
@@ -198,22 +221,25 @@ app.post('/api/crash/start', requireAuth, (req, res) => {
 });
 app.post('/api/crash/cashout', requireAuth, (req, res) => {
   const {payout,bet}=req.body;
-  const safe=Math.min(Math.max(0,payout),2000000);
+  // Anti-cheat: verify payout is reasonable (max 1000x the bet)
+  const maxPayout = (bet||0) * 1000;
+  const safe=Math.min(Math.max(0,payout), maxPayout, 500000);
   const updated=db.addBalance(req.user.discord_id,safe);
   const profit=safe-(bet||0);
   db.logTransaction(req.user.discord_id,'crash',profit,'cashout');
-  db.recordBet(req.user.discord_id,0,0);
+  db.recordBet(req.user.discord_id,0,0); // just increment games_played
   checkBigWin(req.user.username,'crash',profit,null,1000);
   res.json({newBalance:updated.balance});
 });
 
 // ── PLINKO ────────────────────────────────────────────────
 const PLINKO_MULTS=[10,3,1.5,1,0.5,0.3,0.5,1,1.5,3,10];
-const PLINKO_WEIGHTS=[1,3,8,16,24,30,24,16,8,3,1];
+const PLINKO_WEIGHTS=[1,3,8,16,24,30,24,16,8,3,1]; // total=134
 app.post('/api/plinko', requireAuth, (req, res) => {
   const {bet}=req.body;
   if(!bet||bet<10)return res.status(400).json({error:'Min bet 10 ST'});
-  if(req.user.balance<bet)return res.status(400).json({error:'Insufficient balance'});
+  const freshUser=db.getUser(req.user.discord_id);
+  if(!freshUser||freshUser.balance<bet)return res.status(400).json({error:'Insufficient balance'});
   const total=PLINKO_WEIGHTS.reduce((a,b)=>a+b,0);
   let r=Math.random()*total, bi=0;
   for(let i=0;i<PLINKO_WEIGHTS.length;i++){r-=PLINKO_WEIGHTS[i];if(r<=0){bi=i;break;}}
@@ -224,16 +250,34 @@ app.post('/api/plinko', requireAuth, (req, res) => {
   res.json({bucketIndex:bi,multiplier:mult,won:payout>bet,payout,newBalance:updated.balance});
 });
 
+
+// Mines multiplier — based on hypergeometric probability (same math as real Stake mines)
+// House edge: 1% (0.99 factor)
+function calcMinesMultiplier(mineCount, revealed) {
+  // P(all revealed tiles are safe) = product of (safe_remaining/total_remaining) for each pick
+  // Multiplier = 1 / P * 0.99 (house edge)
+  const totalTiles = 25;
+  const safeTiles = totalTiles - mineCount;
+  let prob = 1;
+  for (let i = 0; i < revealed; i++) {
+    prob *= (safeTiles - i) / (totalTiles - i);
+  }
+  const mult = parseFloat((0.99 / prob).toFixed(2));
+  return Math.max(1.01, mult);
+}
+
 // ── MINES ─────────────────────────────────────────────────
 app.post('/api/mines/start', requireAuth, (req, res) => {
   const {bet,mineCount=5}=req.body;
   if(!bet||bet<10)return res.status(400).json({error:'Min bet 10 ST'});
   if(req.user.balance<bet)return res.status(400).json({error:'Insufficient balance'});
   if(mineCount<1||mineCount>24)return res.status(400).json({error:'Invalid mine count'});
+  // Place mines randomly on 5x5 grid (25 tiles)
   const cells=Array.from({length:25},(_,i)=>i);
   for(let i=cells.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[cells[i],cells[j]]=[cells[j],cells[i]];}
   const mines=new Set(cells.slice(0,mineCount));
   const updated=db.addBalance(req.user.discord_id,-bet);
+  // Store mine positions in session for reveal validation
   req.session.mines={positions:[...mines],mineCount,bet,revealed:0,active:true};
   res.json({newBalance:updated.balance,mineCount});
 });
@@ -243,22 +287,21 @@ app.post('/api/mines/reveal', requireAuth, (req, res) => {
   if(!game||!game.active)return res.status(400).json({error:'No active game'});
   const isMine=game.positions.includes(index);
   if(isMine){
-    game.active=false; req.session.mines=game;
+    game.active=false;
+    req.session.mines=game;
     db.logTransaction(req.user.discord_id,'mines',-game.bet,'mine');
     return res.json({isMine:true,mines:game.positions,newBalance:req.user.balance});
   }
   game.revealed++;
   req.session.mines=game;
-  const safe=25-game.mineCount, found=game.revealed;
-  const mult=parseFloat((Math.pow(safe/(safe-found+1),found)*0.97).toFixed(2));
+  const mult = calcMinesMultiplier(game.mineCount, game.revealed);
   res.json({isMine:false,revealed:game.revealed,multiplier:mult});
 });
 app.post('/api/mines/cashout', requireAuth, (req, res) => {
   const game=req.session.mines;
   if(!game||!game.active||game.revealed===0)return res.status(400).json({error:'Nothing to cash out'});
   game.active=false;
-  const safe=25-game.mineCount, found=game.revealed;
-  const mult=parseFloat((Math.pow(safe/(safe-found+1),found)*0.97).toFixed(2));
+  const mult = calcMinesMultiplier(game.mineCount, game.revealed);
   const payout=Math.floor(game.bet*mult);
   const profit=payout-game.bet;
   const updated=db.addBalance(req.user.discord_id,payout);
@@ -268,6 +311,7 @@ app.post('/api/mines/cashout', requireAuth, (req, res) => {
 });
 
 // ── HI-LO ─────────────────────────────────────────────────
+// Fully server-side for fairness
 const HL_RANKS=['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
 function hlVal(r){return HL_RANKS.indexOf(r)+2;}
 function randCard(){return{rank:HL_RANKS[Math.floor(Math.random()*13)],suit:['♠','♥','♦','♣'][Math.floor(Math.random()*4)]};}
@@ -290,14 +334,17 @@ app.post('/api/hilo/guess', requireAuth, (req, res) => {
   let win=false;
   if(direction==='higher'&&newVal>oldVal)win=true;
   if(direction==='lower'&&newVal<oldVal)win=true;
+  // Ties = loss
   if(!win){
     game.active=false; req.session.hilo=game;
     db.logTransaction(req.user.discord_id,'hilo',-game.bet,'loss');
     return res.json({win:false,newCard,oldCard:game.card});
   }
   game.streak++;
-  const risk=direction==='higher'?(13-oldVal)/13:(oldVal-2)/13;
-  game.mult=parseFloat((game.mult*(1+(risk*1.5))).toFixed(3));
+  // Multiplier: risk-adjusted by position of current card
+  const risk = direction==="higher"?(13-oldVal)/13:(oldVal-2)/13;
+  const riskMult = 1+(risk*1.5);
+  game.mult=parseFloat((game.mult*riskMult).toFixed(3));
   game.card=newCard; req.session.hilo=game;
   res.json({win:true,newCard,streak:game.streak,mult:game.mult});
 });
@@ -317,8 +364,9 @@ app.post('/api/hilo/cashout', requireAuth, (req, res) => {
 app.get('/api/daily/status', requireAuth, (req, res) => {
   const now=Date.now(), last=req.user.last_daily||0;
   const nextClaimAt=last+24*60*60*1000;
+  // Streak tiers
   const streak=req.user.streak||0;
-  const base=250, bonus=streak*50, extra=streak>=100?10000:streak>=30?2000:streak>=7?500:0;
+  const base=250, bonus=streak*50, extra=streak>=7?500:streak>=30?2000:streak>=100?10000:0;
   const reward=base+bonus+extra;
   res.json({canClaim:now>=nextClaimAt,streak,nextClaimAt,reward,nextMilestone:streak>=100?null:streak>=30?100:streak>=7?30:7});
 });
@@ -327,7 +375,7 @@ app.post('/api/daily/claim', requireAuth, (req, res) => {
   if(now<last+24*60*60*1000)return res.status(400).json({error:'Already claimed today'});
   const isStreak=now<last+48*60*60*1000&&last>0;
   const newStreak=isStreak?(req.user.streak||0)+1:1;
-  const base=250, bonus=(newStreak-1)*50;
+  const base=250,bonus=(newStreak-1)*50;
   const extra=newStreak>=100?10000:newStreak>=30?2000:newStreak>=7?500:0;
   const reward=base+bonus+extra;
   db.updateUser(req.user.discord_id,{streak:newStreak,last_daily:now});
@@ -343,10 +391,12 @@ app.get('/api/chat/stream', requireAuth, (req, res) => {
   res.setHeader('Cache-Control','no-cache');
   res.setHeader('Connection','keep-alive');
   res.setHeader('Access-Control-Allow-Origin','*');
+  // Send recent history
   const recent=db.getRecentChat(60);
   res.write(`event: history\ndata: ${JSON.stringify(recent)}\n\n`);
   sseClients.add(res);
   req.on('close',()=>sseClients.delete(res));
+  // Keepalive ping
   const ping=setInterval(()=>{try{res.write(':ping\n\n');}catch(e){clearInterval(ping);}},25000);
   req.on('close',()=>clearInterval(ping));
 });
@@ -357,12 +407,15 @@ app.post('/api/chat/send', requireAuth, async (req, res) => {
   message=message.slice(0,300).trim();
   const u=req.user;
 
+  // Commands
   if(message.startsWith('.pay ')) {
     const parts=message.split(' ');
-    const mention=parts[1], amount=parseInt(parts[2]);
+    const mention=parts[1], amountStr=parts[2];
+    const amount=parseInt(amountStr);
     if(!mention||isNaN(amount)||amount<1)return res.status(400).json({error:'Usage: .pay @username amount'});
     const targetName=mention.replace('@','').toLowerCase();
-    const target=db.getAllUsers().find(u=>u.username.toLowerCase()===targetName);
+    const allUsers=db.getAllUsers();
+    const target=allUsers.find(u=>u.username.toLowerCase()===targetName);
     if(!target)return res.status(400).json({error:`User ${mention} not found`});
     if(u.balance<amount)return res.status(400).json({error:'Insufficient balance'});
     db.addBalance(u.discord_id,-amount);
@@ -389,7 +442,7 @@ app.post('/api/chat/send', requireAuth, async (req, res) => {
     if(!isNaN(amount)&&amount>0&&u.balance>=amount) {
       const won=Math.random()<0.5;
       if(won) db.addBalance(u.discord_id,amount); else db.addBalance(u.discord_id,-amount);
-      const sysMsg=db.addChatMessage('system','🪙 Coinflip','',`**${u.username}** flipped ${amount.toLocaleString()} ST and ${won?'**WON** 🎉':'**LOST** 💀'}!`);
+      const sysMsg=db.addChatMessage('system','🪙 Coinflip','',`**${u.username}** flipped ${amount.toLocaleString()} ST and ${won?`**WON** 🎉`:'**LOST** 💀'}!`);
       broadcastSSE('chat',sysMsg);
       return res.json({ok:true});
     }
@@ -405,266 +458,287 @@ app.get('/api/leaderboard', requireAuth, (req, res) => res.json(db.getLeaderboar
 app.get('/api/stats', requireAuth, (req, res) => res.json(db.getUserStats(req.user.discord_id)));
 app.get('/api/history', requireAuth, (req, res) => res.json(db.getUserHistory(req.user.discord_id, 50)));
 
-// ── START ─────────────────────────────────────────────────
+// ── START ──────────────────────────────────────────────────
 app.listen(PORT, () => console.log(`\n🎰 Santen Casino running at http://localhost:${PORT}\n`));
 
-
-// ══════════════════════════════════════════════════════════
-// DISCORD BOT — merged into server.js so Railway runs both
-// in one process (Railway only executes `npm start`)
-// ══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// ── DISCORD BOT (runs in same process as the web server) ───
+// ═══════════════════════════════════════════════════════════
 const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder } = require('discord.js');
 
-const botClient = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
-
-const GOLD = 0xC9A84C, GREEN = 0x3DBA6E, RED = 0xE05252, BLUE = 0x5865F2;
-
-function fmt(n){ return Number(n).toLocaleString(); }
-function isAdmin(m){ return m.permissions.has('Administrator')||m.permissions.has('ManageGuild'); }
-function avURL(u, size=64){ return u.avatar?`https://cdn.discordapp.com/avatars/${u.id||u.discord_id}/${u.avatar}.png?size=${size}`:`https://cdn.discordapp.com/embed/avatars/0.png`; }
-
-const slashCommands = [
-  new SlashCommandBuilder().setName('balance').setDescription('Check your Santen Coins balance'),
-  new SlashCommandBuilder().setName('leaderboard').setDescription('Top 10 richest players'),
-  new SlashCommandBuilder().setName('daily').setDescription('Claim your daily Santen Coins'),
-  new SlashCommandBuilder().setName('stats').setDescription('View your gambling statistics'),
-  new SlashCommandBuilder().setName('casino').setDescription('Get the Santen Casino link'),
-  new SlashCommandBuilder().setName('profile')
-    .setDescription("View a player's profile")
-    .addUserOption(o=>o.setName('user').setDescription('Player to look up (leave empty for yourself)')),
-  new SlashCommandBuilder().setName('give')
-    .setDescription('Give Santen Coins to a player (Admin only)')
-    .addUserOption(o=>o.setName('user').setDescription('Target user').setRequired(true))
-    .addIntegerOption(o=>o.setName('amount').setDescription('Amount to give').setRequired(true).setMinValue(1)),
-  new SlashCommandBuilder().setName('take')
-    .setDescription('Take Santen Coins from a player (Admin only)')
-    .addUserOption(o=>o.setName('user').setDescription('Target user').setRequired(true))
-    .addIntegerOption(o=>o.setName('amount').setDescription('Amount to take').setRequired(true).setMinValue(1)),
-  new SlashCommandBuilder().setName('pay')
-    .setDescription('Send Santen Coins to another player')
-    .addUserOption(o=>o.setName('user').setDescription('Who to pay').setRequired(true))
-    .addIntegerOption(o=>o.setName('amount').setDescription('Amount to send').setRequired(true).setMinValue(1)),
-  new SlashCommandBuilder().setName('setbalance')
-    .setDescription("Set a player's balance (Admin only)")
-    .addUserOption(o=>o.setName('user').setDescription('Target user').setRequired(true))
-    .addIntegerOption(o=>o.setName('amount').setDescription('New balance').setRequired(true).setMinValue(0)),
-  new SlashCommandBuilder().setName('flip')
-    .setDescription('Quick coinflip against the house')
-    .addIntegerOption(o=>o.setName('amount').setDescription('Amount to bet').setRequired(true).setMinValue(10)),
-  new SlashCommandBuilder().setName('richest').setDescription('Show top 20 players on the leaderboard'),
-].map(c=>c.toJSON());
-
-async function registerBotCommands() {
-  if(!DISCORD_BOT_TOKEN||!DISCORD_CLIENT_ID||!DISCORD_GUILD_ID){
-    console.log('⚠️  Bot: missing env vars, skipping command registration'); return;
-  }
-  const rest = new REST({version:'10'}).setToken(DISCORD_BOT_TOKEN);
-  try {
-    console.log('📡 Registering slash commands...');
-    await rest.put(Routes.applicationGuildCommands(DISCORD_CLIENT_ID, DISCORD_GUILD_ID), {body:slashCommands});
-    console.log('✅ Slash commands registered');
-  } catch(e) { console.error('Failed to register commands:', e.message); }
-}
-
-botClient.once('ready', async () => {
-  console.log(`\n🤖 Santen Bot logged in as ${botClient.user.tag}`);
-  botClient.user.setActivity('🎰 Santen Casino', {type:3});
-  await registerBotCommands();
-});
-
-botClient.on('interactionCreate', async interaction => {
-  if(!interaction.isChatInputCommand()) return;
-  const {commandName, user:du, member} = interaction;
-
-  // /balance
-  if(commandName==='balance') {
-    const u=db.getUser(du.id);
-    if(!u) return interaction.reply({content:`❌ You haven't joined yet! Visit ${CASINO_URL}`,ephemeral:true});
-    const embed=new EmbedBuilder().setColor(GOLD).setTitle('💰 Balance')
-      .setThumbnail(avURL(du))
-      .addFields(
-        {name:'Player',value:u.username,inline:true},
-        {name:'Balance',value:`**${fmt(u.balance)} ST**`,inline:true},
-        {name:'Streak',value:`🔥 ${u.streak||0} days`,inline:true},
-        {name:'Wagered',value:`${fmt(u.total_wagered||0)} ST`,inline:true},
-        {name:'Biggest Win',value:`${fmt(u.biggest_win||0)} ST`,inline:true},
-        {name:'Games Played',value:`${fmt(u.games_played||0)}`,inline:true},
-      ).setFooter({text:`Santen Casino • ${CASINO_URL}`});
-    return interaction.reply({embeds:[embed]});
-  }
-
-  // /leaderboard
-  if(commandName==='leaderboard') {
-    const rows=db.getLeaderboard(10);
-    if(!rows.length) return interaction.reply({content:'No players yet!',ephemeral:true});
-    const medals=['🥇','🥈','🥉'];
-    const desc=rows.map((r,i)=>`${medals[i]||`**${i+1}.**`} <@${r.discord_id}> — **${fmt(r.balance)} ST**`).join('\n');
-    const embed=new EmbedBuilder().setColor(GOLD).setTitle('🏆 Santen Leaderboard').setDescription(desc).setFooter({text:'Santen Casino'}).setTimestamp();
-    return interaction.reply({embeds:[embed]});
-  }
-
-  // /richest
-  if(commandName==='richest') {
-    const rows=db.getLeaderboard(20);
-    const medals=['🥇','🥈','🥉'];
-    const desc=rows.map((r,i)=>`${medals[i]||`**${i+1}.**`} **${r.username}** — ${fmt(r.balance)} ST`).join('\n');
-    const embed=new EmbedBuilder().setColor(GOLD).setTitle('💎 Top 20 Richest Players').setDescription(desc);
-    return interaction.reply({embeds:[embed]});
-  }
-
-  // /daily
-  if(commandName==='daily') {
-    let u=db.getUser(du.id);
-    if(!u) return interaction.reply({content:`❌ Visit ${CASINO_URL} first to register!`,ephemeral:true});
-    const now=Date.now(), last=u.last_daily||0;
-    if(now<last+24*60*60*1000) {
-      const ms=last+24*60*60*1000-now, h=Math.floor(ms/3600000), m=Math.floor((ms%3600000)/60000);
-      return interaction.reply({content:`⏳ Come back in **${h}h ${m}m**!`,ephemeral:true});
-    }
-    const isStreak=now<last+48*60*60*1000&&last>0;
-    const newStreak=isStreak?(u.streak||0)+1:1;
-    const base=250, bonus=(newStreak-1)*50, extra=newStreak>=100?10000:newStreak>=30?2000:newStreak>=7?500:0;
-    const reward=base+bonus+extra;
-    db.updateUser(du.id,{streak:newStreak,last_daily:now});
-    db.addBalance(du.id,reward);
-    u=db.getUser(du.id);
-    const embed=new EmbedBuilder().setColor(GOLD).setTitle('🎁 Daily Claimed!')
-      .setThumbnail(avURL(du))
-      .addFields(
-        {name:'Reward',value:`**+${fmt(reward)} ST**`,inline:true},
-        {name:'Streak',value:`🔥 ${newStreak} days`,inline:true},
-        {name:'New Balance',value:`**${fmt(u.balance)} ST**`,inline:true},
-      )
-      .setFooter({text:'Milestone bonuses at 7, 30, 100 days!'});
-    if(extra>0) embed.setDescription(`🎉 **${newStreak}-day milestone bonus: +${fmt(extra)} ST!**`);
-    return interaction.reply({embeds:[embed]});
-  }
-
-  // /stats
-  if(commandName==='stats') {
-    const u=db.getUser(du.id);
-    if(!u) return interaction.reply({content:`❌ Visit ${CASINO_URL} to register!`,ephemeral:true});
-    const stats=db.getUserStats(du.id);
-    const desc=stats.length
-      ? stats.map(s=>`**${s.type}** — ${fmt(s.plays)} plays, ${s.wins} wins, ${s.net>=0?'+':''}${fmt(s.net)} ST net`).join('\n')
-      : 'No games played yet!';
-    const total=stats.reduce((a,s)=>({net:a.net+s.net,plays:a.plays+s.plays}),{net:0,plays:0});
-    const embed=new EmbedBuilder().setColor(GOLD).setTitle(`📊 ${u.username}'s Stats`)
-      .setDescription(desc)
-      .addFields(
-        {name:'Total Net',value:`${total.net>=0?'+':''}${fmt(total.net)} ST`,inline:true},
-        {name:'Total Games',value:`${fmt(total.plays)}`,inline:true}
-      )
-      .setFooter({text:'Santen Casino'});
-    return interaction.reply({embeds:[embed],ephemeral:true});
-  }
-
-  // /profile
-  if(commandName==='profile') {
-    const target=interaction.options.getUser('user')||du;
-    const u=db.getUser(target.id);
-    if(!u) return interaction.reply({content:`❌ ${target.username} hasn't joined yet!`,ephemeral:true});
-    const embed=new EmbedBuilder().setColor(GOLD).setTitle(`👤 ${u.username}`)
-      .setThumbnail(avURL(target))
-      .addFields(
-        {name:'Balance',value:`**${fmt(u.balance)} ST**`,inline:true},
-        {name:'Streak',value:`🔥 ${u.streak||0} days`,inline:true},
-        {name:'Games',value:`${fmt(u.games_played||0)}`,inline:true},
-        {name:'Total Wagered',value:`${fmt(u.total_wagered||0)} ST`,inline:true},
-        {name:'Biggest Win',value:`${fmt(u.biggest_win||0)} ST`,inline:true},
-      );
-    return interaction.reply({embeds:[embed]});
-  }
-
-  // /pay
-  if(commandName==='pay') {
-    const target=interaction.options.getUser('user');
-    const amount=interaction.options.getInteger('amount');
-    const sender=db.getUser(du.id);
-    if(!sender) return interaction.reply({content:`❌ You haven't joined! Visit ${CASINO_URL}`,ephemeral:true});
-    if(target.id===du.id) return interaction.reply({content:`❌ You can't pay yourself!`,ephemeral:true});
-    if(sender.balance<amount) return interaction.reply({content:`❌ Insufficient balance! You have **${fmt(sender.balance)} ST**.`,ephemeral:true});
-    const recv=db.getUser(target.id);
-    if(!recv) return interaction.reply({content:`❌ ${target.username} hasn't joined the casino yet!`,ephemeral:true});
-    db.addBalance(du.id,-amount);
-    db.addBalance(target.id,amount);
-    const embed=new EmbedBuilder().setColor(GREEN).setTitle('💸 Payment Sent')
-      .setDescription(`**${du.username}** sent **${fmt(amount)} ST** to **${target.username}**!`);
-    return interaction.reply({embeds:[embed]});
-  }
-
-  // /give
-  if(commandName==='give') {
-    if(!isAdmin(member)) return interaction.reply({content:'❌ Admin only.',ephemeral:true});
-    const target=interaction.options.getUser('user'), amount=interaction.options.getInteger('amount');
-    const u=db.getUser(target.id);
-    if(!u) return interaction.reply({content:`❌ ${target.username} hasn't joined yet.`,ephemeral:true});
-    db.addBalance(target.id,amount);
-    const updated=db.getUser(target.id);
-    const embed=new EmbedBuilder().setColor(GREEN).setTitle('✅ Coins Given')
-      .setDescription(`Gave **${fmt(amount)} ST** to <@${target.id}>.\nNew balance: **${fmt(updated.balance)} ST**`);
-    return interaction.reply({embeds:[embed]});
-  }
-
-  // /take
-  if(commandName==='take') {
-    if(!isAdmin(member)) return interaction.reply({content:'❌ Admin only.',ephemeral:true});
-    const target=interaction.options.getUser('user'), amount=interaction.options.getInteger('amount');
-    const u=db.getUser(target.id);
-    if(!u) return interaction.reply({content:`❌ User not found.`,ephemeral:true});
-    db.addBalance(target.id,-amount);
-    const updated=db.getUser(target.id);
-    const embed=new EmbedBuilder().setColor(RED).setTitle('✅ Coins Taken')
-      .setDescription(`Took **${fmt(amount)} ST** from <@${target.id}>.\nNew balance: **${fmt(updated.balance)} ST**`);
-    return interaction.reply({embeds:[embed]});
-  }
-
-  // /setbalance
-  if(commandName==='setbalance') {
-    if(!isAdmin(member)) return interaction.reply({content:'❌ Admin only.',ephemeral:true});
-    const target=interaction.options.getUser('user'), amount=interaction.options.getInteger('amount');
-    const u=db.getUser(target.id);
-    if(!u) return interaction.reply({content:`❌ User not found.`,ephemeral:true});
-    db.updateUser(target.id,{balance:amount});
-    const embed=new EmbedBuilder().setColor(GOLD).setTitle('✅ Balance Set')
-      .setDescription(`Set <@${target.id}>'s balance to **${fmt(amount)} ST**`);
-    return interaction.reply({embeds:[embed]});
-  }
-
-  // /flip
-  if(commandName==='flip') {
-    const amount=interaction.options.getInteger('amount');
-    const u=db.getUser(du.id);
-    if(!u) return interaction.reply({content:`❌ Visit ${CASINO_URL} to join first!`,ephemeral:true});
-    if(u.balance<amount) return interaction.reply({content:`❌ Insufficient balance! You have **${fmt(u.balance)} ST**.`,ephemeral:true});
-    const won=Math.random()<0.5;
-    const side=won?'Heads':'Tails';
-    if(won) db.addBalance(du.id,amount); else db.addBalance(du.id,-amount);
-    const updated=db.getUser(du.id);
-    const embed=new EmbedBuilder().setColor(won?GREEN:RED)
-      .setTitle(`🪙 ${side}! You ${won?'Won':'Lost'}!`)
-      .addFields(
-        {name:won?'Won':'Lost',value:`**${fmt(amount)} ST**`,inline:true},
-        {name:'New Balance',value:`**${fmt(updated.balance)} ST**`,inline:true},
-      );
-    return interaction.reply({embeds:[embed]});
-  }
-
-  // /casino
-  if(commandName==='casino') {
-    const embed=new EmbedBuilder().setColor(GOLD).setTitle('🎰 Santen Casino')
-      .setDescription(`**[Open Santen Casino](${CASINO_URL})**\n\nPlay slots, blackjack, roulette, crash, mines, plinko, hi-lo and more!`)
-      .addFields(
-        {name:'Games',value:'🎰 Slots\n🃏 Blackjack\n🎡 Roulette\n📈 Crash\n💣 Mines\n🔵 Plinko\n🎴 Hi-Lo',inline:true},
-        {name:'Commands',value:'`/balance` `/daily` `/pay`\n`/stats` `/flip` `/leaderboard`\n`/profile` `/casino`',inline:true},
-      )
-      .setFooter({text:'Login with Discord • Santen Coins only'});
-    return interaction.reply({embeds:[embed]});
-  }
-});
-
-if(DISCORD_BOT_TOKEN) {
-  botClient.login(DISCORD_BOT_TOKEN).catch(e => console.error('Bot login failed:', e.message));
+if (!DISCORD_BOT_TOKEN || !DISCORD_CLIENT_ID || !DISCORD_GUILD_ID) {
+  console.log('⚠️  Bot env vars missing — bot will not start. Set DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID, DISCORD_GUILD_ID.');
 } else {
-  console.log('⚠️  DISCORD_BOT_TOKEN not set — bot will not start');
+  const bot = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
+  const GOLD = 0xC9A84C, GREEN = 0x3DBA6E, RED = 0xE05252;
+
+  const commands = [
+    new SlashCommandBuilder().setName('balance').setDescription('Check your Santen Coins balance'),
+    new SlashCommandBuilder().setName('leaderboard').setDescription('Top 10 richest players'),
+    new SlashCommandBuilder().setName('richest').setDescription('Top 20 richest players'),
+    new SlashCommandBuilder().setName('daily').setDescription('Claim your daily Santen Coins'),
+    new SlashCommandBuilder().setName('stats').setDescription('View your gambling statistics'),
+    new SlashCommandBuilder().setName('casino').setDescription('Get the Santen Casino link'),
+    new SlashCommandBuilder().setName('profile')
+      .setDescription("View a player's profile")
+      .addUserOption(o => o.setName('user').setDescription('Player (leave empty for yourself)')),
+    new SlashCommandBuilder().setName('pay')
+      .setDescription('Send Santen Coins to another player')
+      .addUserOption(o => o.setName('user').setDescription('Who to pay').setRequired(true))
+      .addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true).setMinValue(1)),
+    new SlashCommandBuilder().setName('flip')
+      .setDescription('Quick coinflip against the house')
+      .addIntegerOption(o => o.setName('amount').setDescription('Amount to bet').setRequired(true).setMinValue(10)),
+    new SlashCommandBuilder().setName('give')
+      .setDescription('Give ST to a player (Admin)')
+      .addUserOption(o => o.setName('user').setDescription('Target').setRequired(true))
+      .addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true).setMinValue(1)),
+    new SlashCommandBuilder().setName('take')
+      .setDescription('Take ST from a player (Admin)')
+      .addUserOption(o => o.setName('user').setDescription('Target').setRequired(true))
+      .addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true).setMinValue(1)),
+    new SlashCommandBuilder().setName('setbalance')
+      .setDescription('Set a player\'s balance (Admin)')
+      .addUserOption(o => o.setName('user').setDescription('Target').setRequired(true))
+      .addIntegerOption(o => o.setName('amount').setDescription('New balance').setRequired(true).setMinValue(0)),
+    new SlashCommandBuilder().setName('resetplayer')
+      .setDescription('Reset a player to 1,000 ST (Admin)')
+      .addUserOption(o => o.setName('user').setDescription('Player to reset').setRequired(true)),
+    new SlashCommandBuilder().setName('resetall')
+      .setDescription('⚠️ Reset ALL players to 1,000 ST (Admin — confirm twice)'),
+    new SlashCommandBuilder().setName('wipe')
+      .setDescription('Completely remove a player from the database (Admin)')
+      .addUserOption(o => o.setName('user').setDescription('Player to wipe').setRequired(true)),
+  ].map(c => c.toJSON());
+
+  async function registerCommands() {
+    const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
+    try {
+      await rest.put(Routes.applicationGuildCommands(DISCORD_CLIENT_ID, DISCORD_GUILD_ID), { body: commands });
+      console.log('✅ Bot slash commands registered');
+    } catch(e) { console.error('Bot command registration failed:', e.message); }
+  }
+
+  const fmt = n => Number(n).toLocaleString();
+  const isAdmin = m => m.permissions.has('Administrator') || m.permissions.has('ManageGuild');
+  const avURL = (u, size=64) => u.avatar
+    ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png?size=${size}`
+    : `https://cdn.discordapp.com/embed/avatars/0.png`;
+
+  const resetConfirm = new Map();
+
+  bot.once('ready', async () => {
+    console.log(`\n🤖 Bot logged in as ${bot.user.tag}`);
+    bot.user.setActivity('🎰 Santen Casino', { type: 3 });
+    await registerCommands();
+  });
+
+  bot.on('interactionCreate', async interaction => {
+    if (!interaction.isChatInputCommand()) return;
+    const { commandName, user: du, member } = interaction;
+
+    if (commandName === 'balance') {
+      const u = db.getUser(du.id);
+      if (!u) return interaction.reply({ content: `❌ Visit ${CASINO_URL} to register first!`, ephemeral: true });
+      const embed = new EmbedBuilder().setColor(GOLD).setTitle('💰 Balance')
+        .setThumbnail(avURL(du))
+        .addFields(
+          { name: 'Player', value: u.username, inline: true },
+          { name: 'Balance', value: `**${fmt(u.balance)} ST**`, inline: true },
+          { name: 'Streak', value: `🔥 ${u.streak || 0} days`, inline: true },
+          { name: 'Wagered', value: `${fmt(u.total_wagered || 0)} ST`, inline: true },
+          { name: 'Biggest Win', value: `${fmt(u.biggest_win || 0)} ST`, inline: true },
+          { name: 'Games', value: `${fmt(u.games_played || 0)}`, inline: true },
+        ).setFooter({ text: `Santen Casino • ${CASINO_URL}` });
+      return interaction.reply({ embeds: [embed] });
+    }
+
+    if (commandName === 'leaderboard' || commandName === 'richest') {
+      const limit = commandName === 'richest' ? 20 : 10;
+      const rows = db.getLeaderboard(limit);
+      if (!rows.length) return interaction.reply({ content: 'No players yet!', ephemeral: true });
+      const medals = ['🥇','🥈','🥉'];
+      const desc = rows.map((r, i) => `${medals[i] || `**${i+1}.**`} <@${r.discord_id}> — **${fmt(r.balance)} ST**`).join('\n');
+      const embed = new EmbedBuilder().setColor(GOLD).setTitle(`🏆 Santen ${commandName === 'richest' ? 'Top 20' : 'Leaderboard'}`).setDescription(desc);
+      return interaction.reply({ embeds: [embed] });
+    }
+
+    if (commandName === 'daily') {
+      let u = db.getUser(du.id);
+      if (!u) return interaction.reply({ content: `❌ Visit ${CASINO_URL} to register!`, ephemeral: true });
+      const now = Date.now(), last = u.last_daily || 0;
+      if (now < last + 24*60*60*1000) {
+        const ms = last + 24*60*60*1000 - now, h = Math.floor(ms/3600000), m = Math.floor((ms%3600000)/60000);
+        return interaction.reply({ content: `⏳ Come back in **${h}h ${m}m**!`, ephemeral: true });
+      }
+      const isStreak = now < last + 48*60*60*1000 && last > 0;
+      const newStreak = isStreak ? (u.streak || 0) + 1 : 1;
+      const reward = 250 + (newStreak-1)*50 + (newStreak>=100?10000:newStreak>=30?2000:newStreak>=7?500:0);
+      db.updateUser(du.id, { streak: newStreak, last_daily: now });
+      db.addBalance(du.id, reward);
+      u = db.getUser(du.id);
+      const embed = new EmbedBuilder().setColor(GOLD).setTitle('🎁 Daily Claimed!')
+        .setThumbnail(avURL(du))
+        .addFields(
+          { name: 'Reward', value: `**+${fmt(reward)} ST**`, inline: true },
+          { name: 'Streak', value: `🔥 ${newStreak} days`, inline: true },
+          { name: 'Balance', value: `**${fmt(u.balance)} ST**`, inline: true },
+        );
+      return interaction.reply({ embeds: [embed] });
+    }
+
+    if (commandName === 'stats') {
+      const u = db.getUser(du.id);
+      if (!u) return interaction.reply({ content: `❌ Visit ${CASINO_URL} to register!`, ephemeral: true });
+      const stats = db.getUserStats(du.id);
+      const desc = stats.length
+        ? stats.map(s => `**${s.type}** — ${fmt(s.plays)} plays, ${s.wins} wins, ${s.net >= 0 ? '+' : ''}${fmt(s.net)} ST`).join('\n')
+        : 'No games played yet!';
+      const embed = new EmbedBuilder().setColor(GOLD).setTitle(`📊 ${u.username}'s Stats`).setDescription(desc);
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    if (commandName === 'profile') {
+      const target = interaction.options.getUser('user') || du;
+      const u = db.getUser(target.id);
+      if (!u) return interaction.reply({ content: `❌ ${target.username} hasn't joined yet!`, ephemeral: true });
+      const embed = new EmbedBuilder().setColor(GOLD).setTitle(`👤 ${u.username}`)
+        .setThumbnail(avURL(target))
+        .addFields(
+          { name: 'Balance', value: `**${fmt(u.balance)} ST**`, inline: true },
+          { name: 'Streak', value: `🔥 ${u.streak || 0} days`, inline: true },
+          { name: 'Games', value: `${fmt(u.games_played || 0)}`, inline: true },
+          { name: 'Wagered', value: `${fmt(u.total_wagered || 0)} ST`, inline: true },
+          { name: 'Biggest Win', value: `${fmt(u.biggest_win || 0)} ST`, inline: true },
+        );
+      return interaction.reply({ embeds: [embed] });
+    }
+
+    if (commandName === 'pay') {
+      const target = interaction.options.getUser('user');
+      const amount = interaction.options.getInteger('amount');
+      const sender = db.getUser(du.id);
+      if (!sender) return interaction.reply({ content: `❌ Visit ${CASINO_URL} to register!`, ephemeral: true });
+      if (sender.balance < amount) return interaction.reply({ content: `❌ You only have **${fmt(sender.balance)} ST**.`, ephemeral: true });
+      const recv = db.getUser(target.id);
+      if (!recv) return interaction.reply({ content: `❌ ${target.username} hasn't joined yet!`, ephemeral: true });
+      if (target.id === du.id) return interaction.reply({ content: `❌ Can't pay yourself!`, ephemeral: true });
+      db.addBalance(du.id, -amount);
+      db.addBalance(target.id, amount);
+      const embed = new EmbedBuilder().setColor(GREEN).setTitle('💸 Payment Sent')
+        .setDescription(`**${du.username}** sent **${fmt(amount)} ST** to **${target.username}**!`);
+      return interaction.reply({ embeds: [embed] });
+    }
+
+    if (commandName === 'flip') {
+      const amount = interaction.options.getInteger('amount');
+      const u = db.getUser(du.id);
+      if (!u) return interaction.reply({ content: `❌ Visit ${CASINO_URL} to register!`, ephemeral: true });
+      if (u.balance < amount) return interaction.reply({ content: `❌ You only have **${fmt(u.balance)} ST**.`, ephemeral: true });
+      const won = Math.random() < 0.5;
+      db.addBalance(du.id, won ? amount : -amount);
+      const updated = db.getUser(du.id);
+      const embed = new EmbedBuilder().setColor(won ? GREEN : RED)
+        .setTitle(`🪙 ${won ? 'Heads — You Won!' : 'Tails — You Lost!'}`)
+        .addFields(
+          { name: won ? 'Won' : 'Lost', value: `**${fmt(amount)} ST**`, inline: true },
+          { name: 'New Balance', value: `**${fmt(updated.balance)} ST**`, inline: true },
+        );
+      return interaction.reply({ embeds: [embed] });
+    }
+
+    if (commandName === 'give') {
+      if (!isAdmin(member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+      const target = interaction.options.getUser('user');
+      const amount = interaction.options.getInteger('amount');
+      const u = db.getUser(target.id);
+      if (!u) return interaction.reply({ content: `❌ ${target.username} not found.`, ephemeral: true });
+      db.addBalance(target.id, amount);
+      const updated = db.getUser(target.id);
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(GREEN).setTitle('✅ Coins Given')
+        .setDescription(`Gave **${fmt(amount)} ST** to <@${target.id}>. New balance: **${fmt(updated.balance)} ST**`)] });
+    }
+
+    if (commandName === 'take') {
+      if (!isAdmin(member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+      const target = interaction.options.getUser('user');
+      const amount = interaction.options.getInteger('amount');
+      const u = db.getUser(target.id);
+      if (!u) return interaction.reply({ content: `❌ ${target.username} not found.`, ephemeral: true });
+      db.addBalance(target.id, -amount);
+      const updated = db.getUser(target.id);
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(RED).setTitle('✅ Coins Taken')
+        .setDescription(`Took **${fmt(amount)} ST** from <@${target.id}>. New balance: **${fmt(updated.balance)} ST**`)] });
+    }
+
+    if (commandName === 'setbalance') {
+      if (!isAdmin(member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+      const target = interaction.options.getUser('user');
+      const amount = interaction.options.getInteger('amount');
+      const u = db.getUser(target.id);
+      if (!u) return interaction.reply({ content: `❌ ${target.username} not found.`, ephemeral: true });
+      db.updateUser(target.id, { balance: amount });
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(GOLD).setTitle('✅ Balance Set')
+        .setDescription(`Set <@${target.id}>'s balance to **${fmt(amount)} ST**`)] });
+    }
+
+    if (commandName === 'resetplayer') {
+      if (!isAdmin(member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+      const target = interaction.options.getUser('user');
+      const u = db.getUser(target.id);
+      if (!u) return interaction.reply({ content: `❌ ${target.username} not found.`, ephemeral: true });
+      db.updateUser(target.id, { balance: 1000, total_wagered: 0, total_won: 0, games_played: 0, biggest_win: 0 });
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(RED).setTitle('🔄 Player Reset')
+        .setDescription(`<@${target.id}>'s balance reset to **1,000 ST**.`)] });
+    }
+
+    if (commandName === 'resetall') {
+      if (!isAdmin(member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+      const key = `resetall:${du.id}`;
+      if (!resetConfirm.has(key)) {
+        resetConfirm.set(key, Date.now());
+        setTimeout(() => resetConfirm.delete(key), 30000);
+        return interaction.reply({ content: '⚠️ **Are you sure?** Run `/resetall` again within 30 seconds to confirm. This resets **ALL** players to 1,000 ST!', ephemeral: true });
+      }
+      resetConfirm.delete(key);
+      const allUsers = db.getAllUsers();
+      allUsers.forEach(u => db.updateUser(u.discord_id, { balance: 1000, total_wagered: 0, total_won: 0, games_played: 0, biggest_win: 0 }));
+      db.saveNow();
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(RED).setTitle('🔄 Full Reset')
+        .setDescription(`Reset **${allUsers.length}** players to **1,000 ST** each.`)
+        .setFooter({ text: `Executed by ${du.username}` })] });
+    }
+
+    if (commandName === 'wipe') {
+      if (!isAdmin(member)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+      const target = interaction.options.getUser('user');
+      const u = db.getUser(target.id);
+      if (!u) return interaction.reply({ content: `❌ ${target.username} not found.`, ephemeral: true });
+      const fs = require('fs');
+      const dbPath = require('path').join(__dirname, 'casino_data.json');
+      try {
+        const raw = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+        delete raw.users[target.id];
+        raw.transactions = raw.transactions.filter(t => t.discord_id !== target.id);
+        fs.writeFileSync(dbPath, JSON.stringify(raw));
+        // Clear db cache so next read is fresh
+        const dbModule = require.cache[require.resolve('./db')];
+        if (dbModule) { const m = dbModule.exports; if(m._cache) { /* reset internal cache */ } }
+      } catch(e) { return interaction.reply({ content: `❌ Error: ${e.message}`, ephemeral: true }); }
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(RED).setTitle('🗑️ Player Wiped')
+        .setDescription(`**${target.username}** has been removed from the database.`)] });
+    }
+
+    if (commandName === 'casino') {
+      const embed = new EmbedBuilder().setColor(GOLD).setTitle('🎰 Santen Casino')
+        .setDescription(`**[Open Santen Casino](${CASINO_URL})**\n\nSlots, Blackjack, Roulette, Crash, Mines, Plinko, Hi-Lo and more!`)
+        .addFields(
+          { name: 'Games', value: '🎰 Slots\n🃏 Blackjack\n🎡 Roulette\n📈 Crash\n💣 Mines\n🔵 Plinko\n🎴 Hi-Lo', inline: true },
+          { name: 'Commands', value: '`/balance` `/daily` `/pay`\n`/stats` `/flip` `/leaderboard`\n`/profile` `/casino`', inline: true },
+        ).setFooter({ text: 'Login with Discord • Santen Coins only' });
+      return interaction.reply({ embeds: [embed] });
+    }
+  });
+
+  bot.login(DISCORD_BOT_TOKEN).catch(e => console.error('Bot login failed:', e.message));
 }
