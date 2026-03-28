@@ -1,8 +1,12 @@
+(function() {
+'use strict';
+// All variables are private — console cannot access or modify them
+
 // ── State ────────────────────────────────────────────────
 let user = null;
 let bets = { slots:50, bj:50, roulette:50, cf:50, crash:50, plinko:50, hilo:50, mines:50 };
 let bjState = null, rouletteBet = null, coinChoice = null;
-let crashInterval = null, crashMult = 1.0, crashCrashPoint = 1, crashActive = false, crashCashedOut = false;
+let crashInterval = null, crashMult = 1.0, crashActive = false, crashCashedOut = false;
 let minesState = null, mineCount = 5;
 let hiloActive = false, hiloBet = 0, hiloMult = 1;
 let plinkoRunning = false;
@@ -160,7 +164,7 @@ async function dealBlackjack(){
   const bet=bets.bj;
   if(user.balance<bet){showErr('bj-result','Insufficient balance');return;}
   // Deduct bet
-  const deducted=await apiPost('/api/balance/deduct',{amount:bet,context:'blackjack'});
+  const deducted=await apiPost('/api/blackjack/deal',{bet});
   user.balance=deducted.newBalance; updateUserUI();
 
   const player=[deck.pop(),deck.pop()], dealer=[deck.pop(),deck.pop()];
@@ -395,7 +399,7 @@ async function startCrash(){
   try{
     const data=await apiPost('/api/crash/start',{bet:bets.crash});
     user.balance=data.newBalance;updateUserUI();
-    crashCrashPoint=data.crashPoint;crashMult=1.0;crashActive=true;crashCashedOut=false;
+    crashMult=1.0;crashActive=true;crashCashedOut=false;
     crashPoints=[1];crashStartTime=performance.now();
     const mult=document.getElementById('crash-multiplier');
     const status=document.getElementById('crash-status');
@@ -404,22 +408,34 @@ async function startCrash(){
     function tick(now){
       if(!crashActive)return;
       const elapsed=(now-crashStartTime)/1000;
-      // Exponential growth: m = e^(0.1*t)
+      // Exponential growth: m = e^(0.1*t) — same formula server uses
       crashMult=Math.max(1,parseFloat(Math.pow(Math.E,0.1*elapsed).toFixed(2)));
       crashPoints.push(crashMult);
       mult.textContent=crashMult.toFixed(2)+'×';
       drawCrashFrame();
-      if(crashMult>=crashCrashPoint){
-        crashActive=false;
-        if(!crashCashedOut){
-          mult.textContent=crashCrashPoint.toFixed(2)+'×';mult.classList.add('crashed');
-          status.textContent='Crashed! 💥';
-          cashBtn.classList.add('hidden');btn.classList.remove('hidden');btn.disabled=false;
-          document.getElementById('crash-result').innerHTML=`<span style="color:var(--red)">Crashed at ${crashCrashPoint.toFixed(2)}× — Lost ${fmtNum(bets.crash)} ST</span>`;
-        }
-      } else crashRaf=requestAnimationFrame(tick);
+      // Client NEVER knows the crash point — just keeps ticking.
+      // The server will tell us if we crashed when we try to cash out.
+      // We ping the server every ~500ms to check if it has crashed.
+      crashRaf=requestAnimationFrame(tick);
     }
     crashRaf=requestAnimationFrame(tick);
+    // Poll server every 500ms to check if crashed — client never stores crash point
+    const crashPoll=setInterval(async()=>{
+      if(!crashActive){clearInterval(crashPoll);return;}
+      try{
+        const alive=await fetch('/api/crash/alive');
+        const data=await alive.json();
+        if(data.crashed){
+          clearInterval(crashPoll);
+          crashActive=false;
+          if(crashRaf)cancelAnimationFrame(crashRaf);
+          mult.textContent=data.at.toFixed(2)+'×';mult.classList.add('crashed');
+          status.textContent='Crashed! 💥';
+          cashBtn.classList.add('hidden');btn.classList.remove('hidden');btn.disabled=false;
+          document.getElementById('crash-result').innerHTML=`<span style="color:var(--red)">Crashed at ${data.at.toFixed(2)}× — Lost ${fmtNum(bets.crash)} ST</span>`;
+        }
+      }catch(e){clearInterval(crashPoll);}
+    },500);
   }catch(e){showErr('crash-result',e.message);btn.disabled=false;}
 }
 async function cashOut(){
@@ -827,3 +843,36 @@ function showErr(id,msg){const el=document.getElementById(id);if(el)el.innerHTML
 
 // ── Boot ──────────────────────────────────────────────────
 init();
+
+// Expose only what HTML onclick handlers need — nothing else
+  window.loginWithDiscord = loginWithDiscord;
+  window.logout = logout;
+  window.showPage = showPage;
+  window.adjustBet = adjustBet;
+  window.setBetDirect = setBetDirect;
+  window.spinSlots = spinSlots;
+  window.dealBlackjack = dealBlackjack;
+  window.bjHit = bjHit;
+  window.bjStand = bjStand;
+  window.setRouletteBet = setRouletteBet;
+  window.spinRoulette = spinRoulette;
+  window.setCoinChoice = setCoinChoice;
+  window.flipCoin = flipCoin;
+  window.startCrash = startCrash;
+  window.cashOut = cashOut;
+  window.adjustMines = adjustMines;
+  window.startMines = startMines;
+  window.minesCashout = minesCashout;
+  window.dropPlinko = dropPlinko;
+  window.startHilo = startHilo;
+  window.hiloGuess = hiloGuess;
+  window.hiloCashout = hiloCashout;
+  window.claimDaily = claimDaily;
+  window.loadLeaderboard = loadLeaderboard;
+  window.openProfile = openProfile;
+  window.closeProfileModal = closeProfileModal;
+  window.closeProfile = closeProfile;
+  window.chatKeydown = chatKeydown;
+  window.sendChat = sendChat;
+
+})();
