@@ -160,7 +160,7 @@ async function dealBlackjack(){
   const bet=bets.bj;
   if(user.balance<bet){showErr('bj-result','Insufficient balance');return;}
   // Deduct bet
-  const deducted=await apiPost('/api/balance/deduct',{amount:bet});
+  const deducted=await apiPost('/api/balance/deduct',{amount:bet,context:'blackjack'});
   user.balance=deducted.newBalance; updateUserUI();
 
   const player=[deck.pop(),deck.pop()], dealer=[deck.pop(),deck.pop()];
@@ -426,12 +426,17 @@ async function cashOut(){
   if(!crashActive||crashCashedOut)return;
   crashCashedOut=true;crashActive=false;
   if(crashRaf)cancelAnimationFrame(crashRaf);
-  const payout=Math.floor(bets.crash*crashMult),profit=payout-bets.crash;
-  try{const d=await apiPost('/api/crash/cashout',{payout,bet:bets.crash});updateUserUI(d.newBalance);}catch(e){}
+  // Send NO payout/bet — server recalculates from session state
+  try{
+    const d=await apiPost('/api/crash/cashout',{});
+    updateUserUI(d.newBalance);
+    document.getElementById('crash-status').textContent='Cashed out!';
+    document.getElementById('crash-result').innerHTML=`<span style="color:var(--gold)">Cashed out ${crashMult.toFixed(2)}× — +${fmtNum(d.profit)} ST!</span>`;
+  }catch(e){
+    document.getElementById('crash-result').innerHTML=`<span style="color:var(--red)">${e.message}</span>`;
+  }
   document.getElementById('cashout-btn').classList.add('hidden');
   const btn=document.getElementById('crash-btn');btn.classList.remove('hidden');btn.disabled=false;
-  document.getElementById('crash-status').textContent='Cashed out!';
-  document.getElementById('crash-result').innerHTML=`<span style="color:var(--gold)">Cashed out ${crashMult.toFixed(2)}× — +${fmtNum(profit)} ST!</span>`;
 }
 
 // ── MINES ─────────────────────────────────────────────────
