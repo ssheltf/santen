@@ -7,10 +7,66 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600;700&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css"/>
+<style>
+/* ── 5×3 SLOT GRID ─────────────────────────────────────── */
+.slots-machine { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:24px 20px; }
+.slots-display-5x3 { display:grid; grid-template-columns:repeat(5,1fr); grid-template-rows:repeat(3,1fr); gap:5px; background:var(--bg3); border:2px solid rgba(201,168,76,.3); border-radius:12px; padding:10px; margin-bottom:12px; position:relative; }
+.slots-display-5x3::before { content:''; position:absolute; top:calc(33.33% - 1px); left:6px; right:6px; height:2px; background:rgba(201,168,76,.35); pointer-events:none; }
+.slots-display-5x3::after  { content:''; position:absolute; top:calc(66.66% - 1px); left:6px; right:6px; height:2px; background:rgba(201,168,76,.35); pointer-events:none; }
+.sg-cell { aspect-ratio:1; display:flex; align-items:center; justify-content:center; font-size:clamp(20px,3vw,34px); background:var(--bg2); border-radius:8px; border:1px solid rgba(255,255,255,.05); transition:all .15s; user-select:none; min-height:52px; }
+.sg-cell.spinning { animation:cellSpin .12s steps(1) infinite; }
+.sg-cell.win-cell { border-color:var(--gold); background:rgba(201,168,76,.18); box-shadow:0 0 12px rgba(201,168,76,.4); animation:winPulse .5s ease infinite alternate; }
+.sg-cell.wild-flash { border-color:#ff4444; background:rgba(255,68,68,.2); box-shadow:0 0 14px rgba(255,68,68,.5); animation:wildGlow .3s ease; }
+.sg-cell.scatter-cell { border-color:#a78bfa; background:rgba(167,139,250,.15); }
+@keyframes cellSpin { 0%,49%{opacity:.6}50%,100%{opacity:1} }
+@keyframes winPulse { from{box-shadow:0 0 8px rgba(201,168,76,.3)} to{box-shadow:0 0 18px rgba(201,168,76,.7)} }
+@keyframes wildGlow { 0%{transform:scale(.95)} 50%{transform:scale(1.06)} 100%{transform:scale(1)} }
+.slots-result { text-align:center; font-size:18px; font-weight:500; min-height:26px; font-family:'Cormorant Garamond',serif; letter-spacing:1px; margin-bottom:4px; }
+.slots-winlines { min-height:18px; margin-bottom:8px; }
+.wl-row { font-size:11px; color:var(--gold); text-align:center; line-height:1.7; }
+.win-text { color:var(--gold); }
+.lose-text { color:var(--muted); }
+.slot-payline-indicator { display:flex; gap:4px; justify-content:center; flex-wrap:wrap; margin-bottom:10px; }
+.pl-dot { width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.12); }
+.pl-dot.active { background:var(--gold); }
+
+/* Bet input */
+.bet-input { width:72px; background:var(--surface,var(--bg3)); border:1px solid var(--border); color:var(--text); font-family:'DM Mono',monospace; font-size:14px; font-weight:500; text-align:center; padding:4px 8px; border-radius:6px; outline:none; }
+.bet-input:focus { border-color:var(--gold); }
+.bet-input::-webkit-inner-spin-button, .bet-input::-webkit-outer-spin-button { opacity:.4; }
+
+/* Payout table */
+.payout-table { margin-top:20px; border-top:1px solid var(--border); padding-top:14px; }
+.pt-title { font-size:10px; letter-spacing:2px; color:var(--muted); text-transform:uppercase; margin-bottom:8px; }
+.pt-row { display:grid; grid-template-columns:auto auto auto auto auto; align-items:center; gap:6px; font-size:11px; color:var(--muted); padding:3px 0; border-bottom:1px solid rgba(255,255,255,.03); }
+.pt-sym { font-size:14px; width:70px; }
+.pt-sub { font-size:10px; color:rgba(232,228,220,.3); }
+.pt-pay { color:var(--gold); font-weight:600; text-align:right; }
+.pt-header { font-size:9px; letter-spacing:1px; color:rgba(232,228,220,.25); }
+.pt-wild-row .pt-sym { color:#ff8888; }
+.pt-scat-row .pt-sym { color:#a78bfa; }
+.pt-scat-row .pt-pay { color:#a78bfa; }
+
+/* Bonus modal */
+.bonus-modal { position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center; }
+.bonus-modal.hidden { display:none; }
+.bonus-overlay { position:absolute; inset:0; background:rgba(0,0,0,.75); backdrop-filter:blur(4px); }
+.bonus-panel { position:relative; background:#1a1610; border:1px solid #c9a84c55; border-radius:20px; padding:32px 28px; max-width:440px; width:92%; text-align:center; box-shadow:0 0 80px #c9a84c22; }
+.bonus-title { font-size:24px; font-weight:700; color:var(--gold); letter-spacing:.05em; margin-bottom:4px; }
+.bonus-subtitle { font-size:12px; color:var(--muted); margin-bottom:20px; }
+.bonus-boxes { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px; }
+.bonus-box { background:#2a2010; border:2px solid #c9a84c44; border-radius:12px; padding:20px 0; font-size:20px; font-weight:700; color:var(--gold); cursor:pointer; transition:all .15s; user-select:none; }
+.bonus-box:hover:not(.revealed):not(.dim) { border-color:var(--gold); background:#352a10; transform:scale(1.04); }
+.bonus-box.revealed { background:#c9a84c22; border-color:var(--gold); color:#fff; animation:popIn .25s ease; }
+.bonus-box.dim { background:#1a1610; border-color:#ffffff15; color:#ffffff25; cursor:default; }
+@keyframes popIn { 0%{transform:scale(.8);opacity:0}100%{transform:scale(1);opacity:1} }
+.bonus-result { min-height:26px; font-size:14px; }
+</style>
 </head>
 <body>
 <div class="grain"></div>
 
+<!-- LANDING -->
 <div id="landing-screen" class="landing-screen hidden">
   <div class="landing-bg">
     <div class="landing-orb orb1"></div>
@@ -44,6 +100,7 @@
   </div>
 </div>
 
+<!-- APP -->
 <div id="app" class="app hidden">
   <aside class="sidebar">
     <div class="sidebar-logo"><span class="logo-s">S</span><span class="logo-coins">ANTEN</span></div>
@@ -81,41 +138,60 @@
       </div>
     </header>
 
-    <!-- SLOTS -->
+    <!-- ── SLOTS ────────────────────────────────────────── -->
     <div id="page-slots" class="page active">
-      <div class="game-container">
+      <div class="game-container" style="max-width:760px">
         <div class="slots-machine">
-          <div class="slots-display">
-            <div class="slot-reel-window"><div class="slot-shine-top"></div><div class="slot-shine-bottom"></div><div class="slot-reel-strip" id="reel0"></div></div>
-            <div class="slot-sep"></div>
-            <div class="slot-reel-window"><div class="slot-shine-top"></div><div class="slot-shine-bottom"></div><div class="slot-reel-strip" id="reel1"></div></div>
-            <div class="slot-sep"></div>
-            <div class="slot-reel-window"><div class="slot-shine-top"></div><div class="slot-shine-bottom"></div><div class="slot-reel-strip" id="reel2"></div></div>
+
+          <!-- 5×3 Grid -->
+          <div class="slots-display-5x3" id="slot-grid-5x3">
+            <!-- 15 cells built by buildSlotGrid() in JS on page load -->
           </div>
+
           <div class="slots-result" id="slots-result"></div>
+          <div class="slots-winlines" id="slots-winlines"></div>
+
+          <!-- Bet + Spin -->
           <div class="bet-row">
             <div class="bet-control">
-              <button onclick="adjustBet('slots',-50)">−</button>
-              <span>Bet: <strong id="slots-bet-display">50</strong> ST</span>
-              <button onclick="adjustBet('slots',50)">+</button>
+              <button onclick="(()=>{const i=document.getElementById('slots-custom-bet');i.value=Math.max(10,(parseInt(i.value)||100)-50);})()">−</button>
+              <span>Bet:</span>
+              <input id="slots-custom-bet" type="number" min="10" step="10" value="100" class="bet-input" oninput="this.value=Math.max(10,parseInt(this.value)||10)"/>
+              <span>ST</span>
+              <button onclick="(()=>{const i=document.getElementById('slots-custom-bet');i.value=(parseInt(i.value)||100)+50;})()">+</button>
             </div>
+            <div style="font-size:10px;color:var(--muted)">10 lines · bet/10 per line</div>
             <button class="spin-btn" id="slots-btn" onclick="spinSlots()">SPIN</button>
           </div>
+
+          <!-- Paytable -->
           <div class="payout-table">
-            <div class="pt-title">Paytable</div>
-            <div class="pt-row"><span>💎💎💎</span><span class="pt-odds">1 in 134M</span><span>×250</span></div>
-            <div class="pt-row"><span>7️⃣7️⃣7️⃣</span><span class="pt-odds">1 in 32,768</span><span>×100</span></div>
-            <div class="pt-row"><span>🍒🍒🍒</span><span class="pt-odds">1 in 3,641</span><span>×40</span></div>
-            <div class="pt-row"><span>⭐⭐⭐</span><span class="pt-odds">1 in 910</span><span>×15</span></div>
-            <div class="pt-row"><span>🔔🔔🔔</span><span class="pt-odds">1 in 228</span><span>×8</span></div>
-            <div class="pt-row"><span>🍋🍋🍋</span><span class="pt-odds">1 in 53</span><span>×4</span></div>
-            <div class="pt-row"><span>Any 2 match</span><span class="pt-odds">~21%</span><span>×2</span></div>
+            <div class="pt-title">Paytable — multiplier of bet-per-line (= total bet ÷ 10)</div>
+            <div class="pt-row" style="border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:4px;">
+              <span class="pt-sym pt-header">Symbol</span>
+              <span class="pt-header pt-sub">×3</span>
+              <span class="pt-header pt-sub">×4</span>
+              <span class="pt-header pt-sub">×5</span>
+              <span class="pt-header pt-sub">Notes</span>
+            </div>
+            <div class="pt-row pt-wild-row"><span class="pt-sym">🎲 Wild</span><span class="pt-sub">5</span><span class="pt-sub">15</span><span class="pt-pay">×75</span><span class="pt-sub" style="color:#ff8888;font-size:9px">expands reel</span></div>
+            <div class="pt-row pt-scat-row"><span class="pt-sym">⭐ Scatter</span><span class="pt-sub">5</span><span class="pt-sub">20</span><span class="pt-pay">×200</span><span class="pt-sub" style="color:#a78bfa;font-size:9px">any pos · bonus</span></div>
+            <div class="pt-row"><span class="pt-sym">7️⃣ Seven</span><span class="pt-sub">2</span><span class="pt-sub">5</span><span class="pt-pay">×35</span><span class="pt-sub"></span></div>
+            <div class="pt-row"><span class="pt-sym">🔔 Bell</span><span class="pt-sub">2</span><span class="pt-sub">4.5</span><span class="pt-pay">×20</span><span class="pt-sub"></span></div>
+            <div class="pt-row"><span class="pt-sym">🍇 Grapes</span><span class="pt-sub">1.5</span><span class="pt-sub">3</span><span class="pt-pay">×10</span><span class="pt-sub"></span></div>
+            <div class="pt-row"><span class="pt-sym">🍉 Melon</span><span class="pt-sub">1.5</span><span class="pt-sub">3</span><span class="pt-pay">×10</span><span class="pt-sub"></span></div>
+            <div class="pt-row"><span class="pt-sym">🍑 Plum</span><span class="pt-sub">0.5</span><span class="pt-sub">2</span><span class="pt-pay">×5</span><span class="pt-sub"></span></div>
+            <div class="pt-row"><span class="pt-sym">🍋 Lemon</span><span class="pt-sub">0.5</span><span class="pt-sub">2</span><span class="pt-pay">×5</span><span class="pt-sub"></span></div>
+            <div class="pt-row"><span class="pt-sym">🍒 Cherry</span><span class="pt-sub">0.5</span><span class="pt-sub">2</span><span class="pt-pay">×5</span><span class="pt-sub"></span></div>
+            <div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6;">
+              Scatter pays multiplied by <em>total</em> bet. Wild expands entire reel column and substitutes all except Scatter. Highest payline win only per line.
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- BLACKJACK -->
+    <!-- ── BLACKJACK ─────────────────────────────────────── -->
     <div id="page-blackjack" class="page">
       <div class="game-container">
         <div class="bj-table">
@@ -143,7 +219,7 @@
       </div>
     </div>
 
-    <!-- ROULETTE -->
+    <!-- ── ROULETTE ──────────────────────────────────────── -->
     <div id="page-roulette" class="page">
       <div class="game-container">
         <div class="roulette-area">
@@ -178,7 +254,7 @@
       </div>
     </div>
 
-    <!-- COINFLIP -->
+    <!-- ── COINFLIP ──────────────────────────────────────── -->
     <div id="page-coinflip" class="page">
       <div class="game-container">
         <div class="cf-area">
@@ -190,8 +266,8 @@
           </div>
           <div id="cf-result" class="cf-result"></div>
           <div class="cf-choices">
-            <button class="cf-choice" id="cf-heads" onclick="setCoinChoice('heads')">HEADS</button>
-            <button class="cf-choice" id="cf-tails" onclick="setCoinChoice('tails')">TAILS</button>
+            <button class="cf-choice" id="cf-heads" onclick="selectCoin('heads')">HEADS</button>
+            <button class="cf-choice" id="cf-tails" onclick="selectCoin('tails')">TAILS</button>
           </div>
           <div class="bet-row">
             <div class="bet-control">
@@ -205,7 +281,7 @@
       </div>
     </div>
 
-    <!-- CRASH -->
+    <!-- ── CRASH ─────────────────────────────────────────── -->
     <div id="page-crash" class="page">
       <div class="game-container">
         <div class="crash-area">
@@ -225,7 +301,7 @@
       </div>
     </div>
 
-    <!-- PLINKO -->
+    <!-- ── PLINKO ─────────────────────────────────────────── -->
     <div id="page-plinko" class="page">
       <div class="game-container">
         <div class="plinko-area">
@@ -243,7 +319,7 @@
       </div>
     </div>
 
-    <!-- HI-LO -->
+    <!-- ── HI-LO ──────────────────────────────────────────── -->
     <div id="page-hilo" class="page">
       <div class="game-container">
         <div class="hilo-area">
@@ -259,24 +335,29 @@
             <div class="hilo-stat"><span class="hilo-stat-label">Potential</span><span id="hilo-potential" class="hilo-stat-val gold">0 ST</span></div>
           </div>
           <div id="hilo-result" class="hilo-result"></div>
-          <div class="hilo-actions" id="hilo-actions">
+          <div class="hilo-actions">
             <button class="hilo-btn higher" id="hilo-higher" onclick="hiloGuess('higher')" disabled>⬆ Higher</button>
             <button class="hilo-btn cashout-hilo" id="hilo-cashout" onclick="hiloCashout()" style="display:none">💰 Cash Out</button>
             <button class="hilo-btn lower" id="hilo-lower" onclick="hiloGuess('lower')" disabled>⬇ Lower</button>
           </div>
           <div class="bet-row">
             <div class="bet-control">
-              <button onclick="adjustBet('hilo',-50)">−</button>
-              <span>Bet: <strong id="hilo-bet-display">50</strong> ST</span>
-              <button onclick="adjustBet('hilo',50)">+</button>
+              <button onclick="(()=>{const i=document.getElementById('hilo-custom-bet');i.value=Math.max(10,(parseInt(i.value)||50)-50);})()">−</button>
+              <span>Bet:</span>
+              <input id="hilo-custom-bet" type="number" min="10" step="10" value="50" class="bet-input" oninput="this.value=Math.max(10,parseInt(this.value)||10)"/>
+              <span>ST</span>
+              <button onclick="(()=>{const i=document.getElementById('hilo-custom-bet');i.value=(parseInt(i.value)||50)+50;})()">+</button>
             </div>
             <button class="spin-btn" id="hilo-start-btn" onclick="startHilo()">DEAL CARD</button>
+          </div>
+          <div style="font-size:10px;color:var(--muted);text-align:center;margin-top:8px;">
+            Tie = loss · Each correct guess: ×1.8 · Cards are dealt server-side
           </div>
         </div>
       </div>
     </div>
 
-    <!-- DAILY -->
+    <!-- ── DAILY ─────────────────────────────────────────── -->
     <div id="page-daily" class="page">
       <div class="game-container">
         <div class="daily-area">
@@ -297,7 +378,7 @@
       </div>
     </div>
 
-    <!-- PROFILE -->
+    <!-- ── PROFILE ────────────────────────────────────────── -->
     <div id="page-profile" class="page">
       <div class="game-container wide">
         <div class="profile-header">
@@ -316,7 +397,7 @@
       </div>
     </div>
 
-    <!-- LEADERBOARD -->
+    <!-- ── LEADERBOARD ───────────────────────────────────── -->
     <div id="page-leaderboard" class="page">
       <div class="game-container">
         <div class="lb-area">
@@ -332,6 +413,41 @@
 
   </main>
 </div>
+
+<!-- BONUS MODAL -->
+<div id="bonus-modal" class="bonus-modal hidden">
+  <div class="bonus-overlay"></div>
+  <div class="bonus-panel">
+    <div id="bonus-title" class="bonus-title">⭐ BONUS ROUND!</div>
+    <div class="bonus-subtitle">You triggered the bonus! Pick 3 boxes to reveal your prizes.</div>
+    <div class="bonus-boxes">
+      <div class="bonus-box">?</div><div class="bonus-box">?</div><div class="bonus-box">?</div>
+      <div class="bonus-box">?</div><div class="bonus-box">?</div><div class="bonus-box">?</div>
+      <div class="bonus-box">?</div><div class="bonus-box">?</div><div class="bonus-box">?</div>
+    </div>
+    <div id="bonus-result" class="bonus-result"></div>
+    <button id="bonus-close" class="spin-btn hidden" style="margin-top:14px">Collect & Close</button>
+  </div>
+</div>
+
+<script>
+// Build the initial slot grid cells on page load
+(function buildSlotGrid() {
+  const ANIM_POOL_INIT = ['🎲','⭐','7️⃣','🔔','🍇','🍉','🍑','🍋','🍒'];
+  const grid = document.getElementById('slot-grid-5x3');
+  if (!grid) return;
+  grid.innerHTML = '';
+  for (let row = 0; row < 3; row++) {
+    for (let reel = 0; reel < 5; reel++) {
+      const cell = document.createElement('div');
+      cell.className = 'sg-cell';
+      cell.id = `sg-${reel}-${row}`;
+      cell.textContent = ANIM_POOL_INIT[Math.floor(Math.random() * ANIM_POOL_INIT.length)];
+      grid.appendChild(cell);
+    }
+  }
+})();
+</script>
 <script src="app.js"></script>
 </body>
 </html>
