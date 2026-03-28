@@ -175,8 +175,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM Mon
 .cf-area{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:36px 24px;display:flex;flex-direction:column;align-items:center;gap:18px;}
 .coin-scene{perspective:1000px;height:140px;display:flex;align-items:center;justify-content:center;}
 .coin{width:120px;height:120px;position:relative;transform-style:preserve-3d;cursor:default;}
-.coin.flipping{animation:cFlip 1.2s cubic-bezier(.36,.07,.19,.97) forwards;}
-@keyframes cFlip{0%{transform:rotateY(0) rotateX(0)}30%{transform:rotateY(900deg) rotateX(15deg)}70%{transform:rotateY(1620deg) rotateX(5deg)}100%{transform:rotateY(1800deg) rotateX(0)}}
+/* coinflip animation handled by JS RAF for smoothness */
 .coin-face{position:absolute;inset:0;border-radius:50%;backface-visibility:hidden;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;}
 .coin-face.heads{background:radial-gradient(circle at 30% 30%,#f5d76e,#c9a84c 40%,#8b6914 80%,#6b5010);box-shadow:inset -6px -6px 16px rgba(0,0,0,.3),inset 3px 3px 10px rgba(255,220,100,.4),0 4px 20px rgba(201,168,76,.4);}
 .coin-face.tails{background:radial-gradient(circle at 30% 30%,#e8c85a,#b89038 40%,#7a5c10 80%,#5a4208);transform:rotateY(180deg);box-shadow:inset -6px -6px 16px rgba(0,0,0,.3),inset 3px 3px 10px rgba(255,200,80,.4),0 4px 20px rgba(201,168,76,.4);}
