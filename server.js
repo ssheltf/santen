@@ -155,9 +155,14 @@ app.post('/api/slots', requireAuth, (req, res) => {
 app.post('/api/blackjack/deal', requireAuth, (req, res) => {
   const {bet} = req.body;
   if (!bet || bet < 10) return res.status(400).json({error:'Min bet 10 ST'});
+  // If a game is already active, settle it as a loss first to prevent double-deduction
+  if (req.session.bjActive && req.session.bjBet) {
+    // Previous game abandoned — already deducted, just clear state
+    req.session.bjBet = null;
+    req.session.bjActive = false;
+  }
   const fresh = db.getUser(req.user.discord_id);
   if (!fresh || fresh.balance < bet) return res.status(400).json({error:'Insufficient balance'});
-  // Deduct bet and store in session atomically
   db.addBalance(req.user.discord_id, -bet);
   req.session.bjBet = bet;
   req.session.bjActive = true;
@@ -364,24 +369,33 @@ app.post('/api/hilo/guess', requireAuth, (req, res) => {
   const {direction}=req.body;
   const game=req.session.hilo;
   if(!game||!game.active)return res.status(400).json({error:'No active game'});
+  // HL_RANKS: '2'=index 0 → value 2, 'A'=index 12 → value 14
+  const oldVal=hlVal(game.card.rank);
+  // Block impossible guesses (e.g. guess higher on Ace, lower on 2)
+  const higherWins = 14 - oldVal; // cards strictly higher
+  const lowerWins  = oldVal - 2;  // cards strictly lower
+  if(direction==='higher' && higherWins === 0) return res.status(400).json({error:"Can't go higher than Ace!"});
+  if(direction==='lower'  && lowerWins  === 0) return res.status(400).json({error:"Can't go lower than 2!"});
   const newCard=randCard();
-  const oldVal=hlVal(game.card.rank), newVal=hlVal(newCard.rank);
+  const newVal=hlVal(newCard.rank);
   let win=false;
-  if(direction==='higher'&&newVal>oldVal)win=true;
-  if(direction==='lower'&&newVal<oldVal)win=true;
-  // Ties = loss
+  if(direction==='higher' && newVal>oldVal) win=true;
+  if(direction==='lower'  && newVal<oldVal) win=true;
+  // Equal value = always loss (house edge)
   if(!win){
     game.active=false; req.session.hilo=game;
     db.logTransaction(req.user.discord_id,'hilo',-game.bet,'loss');
     return res.json({win:false,newCard,oldCard:game.card});
   }
   game.streak++;
-  // Multiplier: risk-adjusted by position of current card
-  const risk = direction==="higher"?(13-oldVal)/13:(oldVal-2)/13;
-  const riskMult = 1+(risk*1.5);
-  game.mult=parseFloat((game.mult*riskMult).toFixed(3));
+  // True probability multiplier with 3% house edge
+  // winningRanks out of 13 total ranks (we use ranks not suits)
+  const winningRanks = direction==='higher' ? higherWins : lowerWins;
+  const trueMult = 13 / winningRanks;           // e.g. 13/6 = 2.17 for mid card
+  const houseMult = parseFloat((trueMult * 0.97).toFixed(3)); // apply 3% house edge
+  game.mult = parseFloat((game.mult * houseMult).toFixed(3));
   game.card=newCard; req.session.hilo=game;
-  res.json({win:true,newCard,streak:game.streak,mult:game.mult});
+  res.json({win:true,newCard,streak:game.streak,mult:game.mult,stepMult:houseMult});
 });
 app.post('/api/hilo/cashout', requireAuth, (req, res) => {
   const game=req.session.hilo;
