@@ -66,6 +66,8 @@ function showPage(page) {
   const nav = document.querySelector(`.ni[data-page="${page}"]`);
   if(nav) nav.classList.add('active');
   const titles={slots:'Slots',blackjack:'Blackjack',roulette:'Roulette',crash:'Crash',mines:'Mines',plinko:'Plinko',coinflip:'Coinflip',hilo:'Hi-Lo',daily:'Daily Reward',leaderboard:'Leaderboard'};
+  const badge=document.getElementById('topbar-badge');
+  if(badge){badge.style.display=['slots','crash','mines','plinko','hilo'].includes(page)?'':'none';}
   document.getElementById('page-title').textContent = titles[page]||page;
   if(page==='leaderboard') loadLeaderboard();
   if(page==='daily') loadDailyStatus();
@@ -630,6 +632,17 @@ async function dropPlinko(){
 }
 
 // ── HI-LO (server-side) ───────────────────────────────────
+const HL_RANKS_CLIENT=['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+function hlValClient(r){return HL_RANKS_CLIENT.indexOf(r)+2;}
+function updateHiloHint(rank){
+  const hint=document.getElementById('hilo-hint');
+  if(!hint||!rank||rank==='?')return;
+  const v=hlValClient(rank);
+  const higher=14-v, lower=v-2;
+  const hMult=higher>0?((13/higher)*0.97).toFixed(2):'—';
+  const lMult=lower>0?((13/lower)*0.97).toFixed(2):'—';
+  hint.textContent=`Higher: ${hMult}×  ·  Lower: ${lMult}×`;
+}
 function setHiloCard(rank,suit){
   const card=document.getElementById('hilo-card');
   const rankEl=document.getElementById('hilo-rank');
@@ -652,6 +665,7 @@ async function startHilo(){
     user.balance=data.newBalance;updateUserUI();
     hiloActive=true;hiloBet=bets.hilo;hiloMult=1;
     flipHiloCard(data.card.rank,data.card.suit);
+    updateHiloHint(data.card.rank);
     document.getElementById('hilo-streak').textContent='0';
     document.getElementById('hilo-mult').textContent='1.00×';
     document.getElementById('hilo-potential').textContent=fmtNum(hiloBet)+' ST';
@@ -841,11 +855,42 @@ async function sendChat(){
 // ── Helpers ───────────────────────────────────────────────
 function showErr(id,msg){const el=document.getElementById(id);if(el)el.innerHTML=`<span style="color:var(--red)">${msg}</span>`;}
 
+// ── Theme ──────────────────────────────────────────────────
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme');
+  const next = current === 'light' ? 'dark' : 'light';
+  if (next === 'dark') {
+    document.documentElement.removeAttribute('data-theme');
+  } else {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+  const icon = next === 'light' ? '☀️' : '🌙';
+  const btn1 = document.getElementById('theme-btn-landing');
+  const btn2 = document.getElementById('theme-btn-app');
+  if (btn1) btn1.textContent = icon;
+  if (btn2) btn2.textContent = icon;
+  try { localStorage.setItem('santen-theme', next); } catch(e) {}
+}
+function initTheme() {
+  try {
+    const saved = localStorage.getItem('santen-theme');
+    if (saved === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+      const btn1 = document.getElementById('theme-btn-landing');
+      const btn2 = document.getElementById('theme-btn-app');
+      if (btn1) btn1.textContent = '☀️';
+      if (btn2) btn2.textContent = '☀️';
+    }
+  } catch(e) {}
+}
+
 // ── Boot ──────────────────────────────────────────────────
+initTheme();
 init();
 
 // Expose only what HTML onclick handlers need — nothing else
   window.loginWithDiscord = loginWithDiscord;
+  window.toggleTheme = toggleTheme;
   window.logout = logout;
   window.showPage = showPage;
   window.adjustBet = adjustBet;
