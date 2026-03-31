@@ -70,7 +70,7 @@ function showPage(page) {
   if(badge){badge.style.display=['slots','crash','mines','plinko','hilo'].includes(page)?'':'none';}
   document.getElementById('page-title').textContent = titles[page]||page;
   if(page==='leaderboard') loadLeaderboard();
-  if(page==='casebattle') cbInit();
+  if(page==='casebattle'){cbInit();cbStartAutoRefresh();}else{cbStopAutoRefresh();}
   if(page==='daily') loadDailyStatus();
   if(page==='roulette') setTimeout(()=>drawRouletteWheel(rouletteAngle),50);
   if(page==='plinko') setTimeout(initPlinko,60);
@@ -114,75 +114,96 @@ function initReels() {
   [0,1,2].forEach(i=>{const s=document.getElementById('reel'+i);const c=buildStrip('💎',6);renderStrip(s,c);s.style.transition='none';s.style.top=-((c.length-1)*CELL_H)+'px';});
 }
 // Slot tick sound — rapid mechanical clicking that decelerates
-function playSlotTick(durationMs) {
+function playSlotTick(durationMs, startOffsetMs) {
   if (!soundEnabled) return;
   try {
     const ctx = getAudioCtx();
+    const startDelay = (startOffsetMs || 0) / 1000;
     const totalTicks = Math.floor(durationMs / 40); // one tick every ~40ms
     for (let i = 0; i < totalTicks; i++) {
-      // Ticks are dense at start, sparse at end — mirrors easing curve
       const progress = i / totalTicks;
-      const ease = 1 - Math.pow(1 - progress, 2); // quadratic
-      const t = ctx.currentTime + (durationMs * ease) / 1000;
+      const ease = 1 - Math.pow(1 - progress, 2); // quadratic easing
+      const t = ctx.currentTime + startDelay + (durationMs * ease) / 1000;
       const o = ctx.createOscillator();
       const g = ctx.createGain();
       o.connect(g); g.connect(ctx.destination);
-      // Pitch drops slightly as reel slows — like a real machine
       o.type = 'square';
+      // Pitch: high at start, lower as it slows. Each reel has a slightly different base pitch
       o.frequency.value = 180 + (1 - progress) * 80;
-      // Volume quieter near the end
       const vol = 0.04 * (1 - progress * 0.6);
       g.gain.setValueAtTime(0, t);
       g.gain.linearRampToValueAtTime(vol, t + 0.004);
       g.gain.exponentialRampToValueAtTime(0.001, t + 0.022);
       o.start(t); o.stop(t + 0.025);
     }
-    // Final "clunk" when reel stops
-    const stopTime = ctx.currentTime + durationMs / 1000;
+    // Final "clunk" when this reel stops — pitched by reel index for 3→2→1 effect
+    const stopTime = ctx.currentTime + startDelay + durationMs / 1000;
     const o2 = ctx.createOscillator();
     const g2 = ctx.createGain();
     o2.connect(g2); g2.connect(ctx.destination);
     o2.type = 'sawtooth'; o2.frequency.value = 120;
-    g2.gain.setValueAtTime(0.09, stopTime);
-    g2.gain.exponentialRampToValueAtTime(0.001, stopTime + 0.07);
-    o2.start(stopTime); o2.stop(stopTime + 0.08);
+    g2.gain.setValueAtTime(0.10, stopTime);
+    g2.gain.exponentialRampToValueAtTime(0.001, stopTime + 0.09);
+    o2.start(stopTime); o2.stop(stopTime + 0.10);
   } catch(e) {}
 }
 
-function spinReel(el, target, total, delay) {
+function spinReel(el, target, total, delay, durOverride, noSound) {
   return new Promise(resolve=>{
     const cells=buildStrip(target,total); renderStrip(el,cells);
     el.style.transition='none'; el.style.top='0px'; el.getBoundingClientRect();
     setTimeout(()=>{
-      const finalTop=-((cells.length-1)*CELL_H), dur=0.6+total*0.05;
-      // Play tick sound for this reel's spin duration
-      playSlotTick(dur * 1000);
+      const finalTop=-((cells.length-1)*CELL_H);
+      const dur = durOverride !== undefined ? durOverride : (0.6+total*0.05);
+      if(!noSound) playSlotTick(dur * 1000, 0);
       el.style.transition=`top ${dur}s cubic-bezier(0.1,0.85,0.25,1.0)`;
       el.style.top=finalTop+'px';
       el.addEventListener('transitionend',()=>resolve(),{once:true});
     },delay);
   });
 }
-async function spinSlots() {
+
+async function spinSlots(instant) {
   if(!user)return;
-  const btn=document.getElementById('slots-btn'); btn.disabled=true;
+  const btn=document.getElementById('slots-btn');
+  const quickBtn=document.getElementById('slots-quick-btn');
+  btn.disabled=true; if(quickBtn)quickBtn.disabled=true;
   document.getElementById('slots-result').innerHTML='';
   try {
     const data=await apiPost('/api/slots',{bet:bets.slots});
-    await Promise.all([
-      spinReel(document.getElementById('reel0'),data.reels[0],18,0),
-      spinReel(document.getElementById('reel1'),data.reels[1],24,100),
-      spinReel(document.getElementById('reel2'),data.reels[2],30,200),
-    ]);
+    if(instant){
+      // Quick spin: very short animation (0.15s each, staggered 60ms)
+      await Promise.all([
+        spinReel(document.getElementById('reel0'),data.reels[0],8,0,0.18),
+        spinReel(document.getElementById('reel1'),data.reels[1],8,60,0.18),
+        spinReel(document.getElementById('reel2'),data.reels[2],8,120,0.18),
+      ]);
+    } else {
+      // Normal spin: cascading stop — reel0 short, reel1 medium, reel2 long
+      // Schedule all three reel sounds upfront on the same AudioContext timeline
+      // so they play at the correct absolute times even with JS timer jitter
+      playSlotTick(900,  0);    // reel0: 0.9s, starts immediately
+      playSlotTick(1400, 120);  // reel1: 1.4s, starts after 120ms
+      playSlotTick(2000, 280);  // reel2: 2.0s, starts after 280ms
+      await Promise.all([
+        spinReel(document.getElementById('reel0'),data.reels[0],14,0,   0.9,  true),
+        spinReel(document.getElementById('reel1'),data.reels[1],20,120, 1.4,  true),
+        spinReel(document.getElementById('reel2'),data.reels[2],28,280, 2.0,  true),
+      ]);
+    }
     updateUserUI(data.newBalance);
     const res=document.getElementById('slots-result');
     if(data.won){
       res.innerHTML=`<span class="win-txt">+${fmtNum(data.payout)} ST · ${data.multiplier}×</span>`;
       document.querySelector('.slots-machine').classList.add('game-win');
       setTimeout(()=>document.querySelector('.slots-machine').classList.remove('game-win'),700);
-    } else res.innerHTML=`<span class="lose-txt">No match — spin again</span>`;
-    btn.disabled=false;
-  } catch(e){showErr('slots-result',e.message);btn.disabled=false;}
+      sfx(data.multiplier>=25?'jackpot':'win_small');
+    } else {
+      res.innerHTML=`<span class="lose-txt">No match — spin again</span>`;
+      sfx('lose');
+    }
+    btn.disabled=false; if(quickBtn)quickBtn.disabled=false;
+  } catch(e){showErr('slots-result',e.message);btn.disabled=false;if(quickBtn)quickBtn.disabled=false;}
 }
 
 // ── BLACKJACK (fair — pure client-side, server just settles) ──
@@ -975,10 +996,12 @@ function sfx(type) {
 // ── CASE BATTLE ──────────────────────────────────────────────
 let cbSelectedCase = null;
 let cbSelectedMode = '1v1';
+let cbSelectedNumCases = 1;
 let cbCurrentBattleId = null;
 let cbBattleStream = null;
 let cbIsCreator = false;
 
+let cbAutoRefreshTimer = null;
 async function cbInit() {
   try {
     const [casesRes, battlesRes] = await Promise.all([
@@ -989,8 +1012,21 @@ async function cbInit() {
     cbRenderOpenBattles(battlesRes);
   } catch(e) {}
 }
+function cbStartAutoRefresh() {
+  cbStopAutoRefresh();
+  cbAutoRefreshTimer = setInterval(async ()=>{
+    try {
+      const battlesRes = await fetch('/api/battles').then(r=>r.json());
+      cbRenderOpenBattles(battlesRes);
+    } catch(e) {}
+  }, 3000);
+}
+function cbStopAutoRefresh() {
+  if(cbAutoRefreshTimer){ clearInterval(cbAutoRefreshTimer); cbAutoRefreshTimer=null; }
+}
 
 function cbRenderCases(cases) {
+  window._cbCasesData = cases; // cache for animation
   const grid = document.getElementById('cb-cases-grid');
   if (!grid) return;
   grid.innerHTML = '';
@@ -1007,7 +1043,8 @@ function cbRenderCases(cases) {
 
 function cbUpdateCost(price, color) {
   const el = document.getElementById('cb-create-cost');
-  if (el) el.textContent = `Cost: ${fmtNum(price)} ST`;
+  const total = price * cbSelectedNumCases;
+  if (el) el.textContent = `Cost: ${fmtNum(total)} ST per player${cbSelectedNumCases > 1 ? ` (${cbSelectedNumCases}× ${fmtNum(price)} ST)` : ''}`;
 }
 
 function cbRenderOpenBattles(battles) {
@@ -1030,7 +1067,7 @@ function cbRenderOpenBattles(battles) {
     }).join('');
     row.innerHTML = `
       <div class="cb-battle-case">${b.caseName?.includes('Diamond')?'💎':b.caseName?.includes('Gold')?'✨':b.caseName?.includes('Silver')?'🎁':b.caseName?.includes('Mystery')?'🔮':'📦'}</div>
-      <div class="cb-battle-info"><div class="cb-battle-name">${b.caseName} · ${b.mode}</div><div class="cb-battle-meta">${filled}/${slots} players · ${fmtNum(b.casePrice)} ST</div></div>
+      <div class="cb-battle-info"><div class="cb-battle-name">${b.caseName} · ${b.mode}${b.numCases>1?' · '+b.numCases+' cases':''}</div><div class="cb-battle-meta">${filled}/${slots} players · ${fmtNum((b.casePrice||0)*(b.numCases||1))} ST ea</div></div>
       <div class="cb-battle-players">${playerDots}</div>
       <button class="cb-join-btn" onclick="cbJoinBattle('${b.id}')">Join</button>`;
     list.appendChild(row);
@@ -1049,11 +1086,21 @@ function cbSetMode(mode, btn) {
   document.querySelectorAll('.cb-mode-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
 }
+function cbSetNumCases(n, btn) {
+  cbSelectedNumCases = n;
+  document.querySelectorAll('.cb-num-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  // Refresh cost display
+  if (cbSelectedCase && window._cbCasesData) {
+    const c = window._cbCasesData.find(x=>x.id===cbSelectedCase);
+    if (c) cbUpdateCost(c.price, c.color);
+  }
+}
 
 async function cbCreateBattle() {
   if (!cbSelectedCase) { alert('Select a case first!'); return; }
   try {
-    const data = await apiPost('/api/battles/create', {caseId:cbSelectedCase, mode:cbSelectedMode});
+    const data = await apiPost('/api/battles/create', {caseId:cbSelectedCase, mode:cbSelectedMode, numCases:cbSelectedNumCases});
     cbIsCreator = true;
     cbEnterRoom(data.id);
   } catch(e) { alert(e.message); }
@@ -1080,12 +1127,14 @@ function cbEnterRoom(battleId) {
   cbBattleStream.addEventListener('state', e => { const b=JSON.parse(e.data); cbRenderRoom(b); });
   cbBattleStream.addEventListener('player_joined', e => { const d=JSON.parse(e.data); cbOnPlayerJoined(d); });
   cbBattleStream.addEventListener('start', e => { cbOnBattleStart(JSON.parse(e.data)); });
+  cbBattleStream.addEventListener('round_start', e => { cbOnRoundStart(JSON.parse(e.data)); });
   cbBattleStream.addEventListener('spin', e => { cbOnSpin(JSON.parse(e.data)); });
   cbBattleStream.addEventListener('done', e => { cbOnDone(JSON.parse(e.data)); });
 }
 
 function cbRenderRoom(battle) {
-  document.getElementById('cb-room-title').textContent = `${battle.caseId?.charAt(0).toUpperCase()+battle.caseId?.slice(1)} Battle · ${battle.mode}`;
+  const numC = battle.numCases||1;
+  document.getElementById('cb-room-title').textContent = `${battle.caseId?.charAt(0).toUpperCase()+battle.caseId?.slice(1)} Battle · ${battle.mode}${numC>1?' · '+numC+' cases':''}`;
   const row = document.getElementById('cb-players-row');
   row.innerHTML = '';
   const slots = battle.slots;
@@ -1108,18 +1157,33 @@ function cbRenderRoom(battle) {
 }
 
 function cbOnPlayerJoined(data) {
-  cbInit(); // refresh open list
-  // Re-fetch room state
-  fetch(`/api/battles/stream/${cbCurrentBattleId}`);
+  // Will be handled by the next 'state' SSE event automatically
+  // No manual fetch needed since SSE stream is already connected
 }
 
 function cbOnBattleStart(data) {
   sfx('case_spin');
   document.getElementById('cb-room-actions').style.display = 'none';
-  // Set all cards to spinning
   data.players.forEach((_,i) => {
     const card = document.getElementById(`cb-pcard-${i}`);
-    if (card) { card.classList.remove('waiting'); card.classList.add('spinning'); const st=card.querySelector('.cb-player-status'); if(st)st.textContent='Spinning...'; }
+    if (card) { card.classList.remove('waiting'); card.classList.add('spinning'); const st=card.querySelector('.cb-player-status'); if(st)st.textContent='Ready...'; }
+  });
+}
+
+function cbOnRoundStart(data) {
+  sfx('case_spin');
+  // Update round indicator in title
+  const titleEl = document.getElementById('cb-room-title');
+  if(titleEl && data.numCases > 1){
+    const base = titleEl.textContent.replace(/ · Round \d+\/\d+/,'');
+    titleEl.textContent = base + ` · Round ${data.round+1}/${data.numCases}`;
+  }
+  // Reset player cards to spinning state for next round
+  document.querySelectorAll('.cb-player-card').forEach(card=>{
+    // Remove old drop from previous round (keep total shown in card header)
+    card.querySelectorAll('.cb-player-drop,.cb-reel-wrap').forEach(el=>el.remove());
+    card.classList.remove('done'); card.classList.add('spinning');
+    const st=card.querySelector('.cb-player-status'); if(st)st.textContent='Opening...';
   });
 }
 
@@ -1127,14 +1191,51 @@ function cbOnSpin(data) {
   sfx('case_spin');
   const card = document.getElementById(`cb-pcard-${data.playerIdx}`);
   if (!card) return;
-  card.classList.remove('spinning'); card.classList.add('done');
+  card.classList.remove('spinning');
   const st = card.querySelector('.cb-player-status'); if(st)st.textContent='';
-  // Show drop result
-  const drop = document.createElement('div');
-  drop.className = 'cb-player-drop';
-  drop.innerHTML = `<div class="cb-drop-name">${data.result.name}</div><div class="cb-drop-value">${fmtNum(data.result.value)} ST</div>`;
-  card.appendChild(drop);
-  if (data.result.value >= 1000) sfx('win_small');
+  // Animate case opening: slide down a reel of items, land on the winner
+  const caseInfo = window._cbCasesData ? window._cbCasesData.find(c=>c.id===data.result.caseId) : null;
+  const fakeItems = [];
+  // Build a strip of 12 random items from the case, then the real result last
+  if(caseInfo && caseInfo.items){
+    for(let i=0;i<12;i++) fakeItems.push(caseInfo.items[Math.floor(Math.random()*caseInfo.items.length)]);
+  }
+  fakeItems.push(data.result);
+
+  const reelWrap = document.createElement('div');
+  reelWrap.className = 'cb-reel-wrap';
+  const reelInner = document.createElement('div');
+  reelInner.className = 'cb-reel-inner';
+  fakeItems.forEach((item,idx) => {
+    const cell = document.createElement('div');
+    cell.className = 'cb-reel-cell' + (idx===fakeItems.length-1?' cb-reel-winner':'');
+    cell.innerHTML = `<div class="cb-reel-iname">${item.name}</div><div class="cb-reel-ival">${fmtNum(item.value)} ST</div>`;
+    reelInner.appendChild(cell);
+  });
+  reelWrap.appendChild(reelInner);
+  card.appendChild(reelWrap);
+
+  // Animate: start at top, slide to last item
+  const cellH = 56; // px per cell
+  const totalH = (fakeItems.length-1)*cellH;
+  reelInner.style.transform = 'translateY(0)';
+  reelInner.getBoundingClientRect();
+  setTimeout(()=>{
+    reelInner.style.transition = 'transform 1.2s cubic-bezier(0.15,0.85,0.3,1.0)';
+    reelInner.style.transform = `translateY(-${totalH}px)`;
+  }, 60);
+
+  setTimeout(()=>{
+    card.classList.add('done');
+    reelWrap.remove();
+    const drop = document.createElement('div');
+    drop.className = 'cb-player-drop cb-drop-reveal';
+    const showTotal = data.numCases > 1 && data.totalValue !== undefined;
+    drop.innerHTML = `<div class="cb-drop-name">${data.result.name}</div><div class="cb-drop-value">${fmtNum(data.result.value)} ST</div>`
+      + (showTotal && data.round > 0 ? `<div class="cb-drop-total">Total: ${fmtNum(data.totalValue)} ST</div>` : '');
+    card.appendChild(drop);
+    if(data.result.value >= 1000) sfx('win_small');
+  }, 1350);
 }
 
 function cbOnDone(data) {
@@ -1165,12 +1266,15 @@ function cbLeaveRoom() {
   document.getElementById('cb-room').classList.add('hidden');
   document.getElementById('cb-lobby').classList.remove('hidden');
   cbInit();
+  cbStartAutoRefresh();
 }
 
 async function cbAddBot() {
   if (!cbCurrentBattleId) return;
+  const btn = document.querySelector('.cb-addbot-btn');
+  if(btn){ btn.disabled=true; btn.textContent='Starting...'; }
   try { await apiPost('/api/battles/addbot', {battleId:cbCurrentBattleId}); }
-  catch(e) { alert(e.message); }
+  catch(e) { if(btn){ btn.disabled=false; btn.textContent='🤖 Add Bot'; } }
 }
 
 // ── Theme ──────────────────────────────────────────────────
@@ -1212,6 +1316,7 @@ init();
   window.cbShowCreate = cbShowCreate;
   window.cbHideCreate = cbHideCreate;
   window.cbSetMode = cbSetMode;
+  window.cbSetNumCases = cbSetNumCases;
   window.cbCreateBattle = cbCreateBattle;
   window.cbJoinBattle = cbJoinBattle;
   window.cbAddBot = cbAddBot;
