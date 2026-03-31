@@ -29,7 +29,9 @@ const CASINO_URL            = process.env.CASINO_URL || `http://localhost:${PORT
 // ── SSE clients for real-time chat ───────────────────────
 const sseClients = new Set();
 function broadcastSSE(event, data) {
-  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}
+
+`;
   sseClients.forEach(res => { try { res.write(msg); } catch(e) { sseClients.delete(res); } });
 }
 
@@ -378,10 +380,15 @@ app.post('/api/hilo/guess', requireAuth, (req, res) => {
   if(direction==='lower'  && lowerWins  === 0) return res.status(400).json({error:"Can't go lower than 2!"});
   const newCard=randCard();
   const newVal=hlVal(newCard.rank);
-  let win=false;
+  let win=false, tie=false;
   if(direction==='higher' && newVal>oldVal) win=true;
   if(direction==='lower'  && newVal<oldVal) win=true;
-  // Equal value = always loss (house edge)
+  if(newVal===oldVal) tie=true; // Equal rank = skip, no win no lose
+  if(tie){
+    // Just swap the card, keep multiplier and streak unchanged
+    game.card=newCard; req.session.hilo=game;
+    return res.json({tie:true,newCard,streak:game.streak,mult:game.mult});
+  }
   if(!win){
     game.active=false; req.session.hilo=game;
     db.logTransaction(req.user.discord_id,'hilo',-game.bet,'loss');
@@ -442,7 +449,9 @@ app.get('/api/chat/stream', requireAuth, (req, res) => {
   res.setHeader('Access-Control-Allow-Origin','*');
   // Send recent history
   const recent=db.getRecentChat(60);
-  res.write(`event: history\ndata: ${JSON.stringify(recent)}\n\n`);
+  res.write(`event: history\ndata: ${JSON.stringify(recent)}
+
+`);
   sseClients.add(res);
   req.on('close',()=>sseClients.delete(res));
   // Keepalive ping
@@ -526,6 +535,231 @@ app.get('/api/crash/alive', requireAuth, (req, res) => {
   }
   return res.json({ crashed: false, running: true });
 });
+
+
+// ════════════════════════════════════════════════════════════
+// ── CASE BATTLE ──────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════
+
+const CASES = {
+  bronze: {
+    name:'Bronze Case', price:100, color:'#cd7f32', emoji:'📦',
+    items:[
+      {name:'Common Drop',   value:30,  weight:40},
+      {name:'Decent Drop',   value:80,  weight:28},
+      {name:'Good Drop',     value:120, weight:16},
+      {name:'Rare Drop',     value:200, weight:9},
+      {name:'Epic Drop',     value:350, weight:5},
+      {name:'Legendary',     value:700, weight:2},
+    ]
+  },
+  silver: {
+    name:'Silver Case', price:300, color:'#aaaaaa', emoji:'🎁',
+    items:[
+      {name:'Common Drop',   value:80,   weight:38},
+      {name:'Decent Drop',   value:220,  weight:26},
+      {name:'Good Drop',     value:380,  weight:18},
+      {name:'Rare Drop',     value:600,  weight:10},
+      {name:'Epic Drop',     value:1100, weight:6},
+      {name:'Legendary',     value:2500, weight:2},
+    ]
+  },
+  gold: {
+    name:'Gold Case', price:750, color:'#c9a84c', emoji:'✨',
+    items:[
+      {name:'Common Drop',   value:200,  weight:36},
+      {name:'Decent Drop',   value:550,  weight:26},
+      {name:'Good Drop',     value:950,  weight:18},
+      {name:'Rare Drop',     value:1600, weight:11},
+      {name:'Epic Drop',     value:3000, weight:6},
+      {name:'Jackpot',       value:8000, weight:3},
+    ]
+  },
+  diamond: {
+    name:'Diamond Case', price:2000, color:'#4af0f0', emoji:'💎',
+    items:[
+      {name:'Common Drop',   value:600,   weight:34},
+      {name:'Decent Drop',   value:1500,  weight:26},
+      {name:'Good Drop',     value:2800,  weight:18},
+      {name:'Rare Drop',     value:5000,  weight:12},
+      {name:'Epic Drop',     value:9000,  weight:7},
+      {name:'Jackpot',       value:25000, weight:3},
+    ]
+  },
+  mystery: {
+    name:'Mystery Case', price:500, color:'#8b6cf7', emoji:'🔮',
+    items:[
+      {name:'Booby Prize',   value:10,   weight:20},
+      {name:'Common Drop',   value:150,  weight:25},
+      {name:'Decent Drop',   value:500,  weight:20},
+      {name:'Good Drop',     value:1000, weight:16},
+      {name:'Rare Drop',     value:2000, weight:10},
+      {name:'Ultra Rare',    value:5000, weight:6},
+      {name:'Jackpot',       value:15000,weight:3},
+    ]
+  },
+};
+
+function spinCase(caseId) {
+  const c = CASES[caseId];
+  if (!c) return null;
+  const total = c.items.reduce((a,b)=>a+b.weight,0);
+  let r = Math.random()*total;
+  for(const item of c.items){ r-=item.weight; if(r<=0) return {...item,caseId}; }
+  return {...c.items[c.items.length-1],caseId};
+}
+
+// In-memory battle rooms (replaced by db for persistence if needed)
+const battles = new Map();
+let battleIdCounter = 1;
+
+function newBattleId(){ return 'B'+(battleIdCounter++).toString().padStart(4,'0'); }
+
+// SSE clients per battle room
+const battleClients = new Map(); // battleId -> Set of res objects
+function broadcastBattle(battleId, event, data) {
+  const clients = battleClients.get(battleId);
+  if(!clients) return;
+  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}
+
+`;
+  clients.forEach(res=>{ try{res.write(msg);}catch(e){clients.delete(res);} });
+}
+
+// GET all open battles
+app.get('/api/battles', requireAuth, (req,res)=>{
+  const open = [...battles.values()].filter(b=>b.status==='waiting').map(b=>({
+    id:b.id, caseId:b.caseId, caseName:CASES[b.caseId]?.name, casePrice:CASES[b.caseId]?.price,
+    mode:b.mode, slots:b.slots, players:b.players.map(p=>({username:p.username,avatar:p.avatar,isBot:p.isBot})), status:b.status
+  }));
+  res.json(open);
+});
+
+// GET case list
+app.get('/api/cases', (req,res)=>{
+  res.json(Object.entries(CASES).map(([id,c])=>({id,name:c.name,price:c.price,color:c.color,emoji:c.emoji,items:c.items})));
+});
+
+// CREATE battle
+app.post('/api/battles/create', requireAuth, (req,res)=>{
+  const {caseId, mode='1v1'} = req.body;
+  if(!CASES[caseId]) return res.status(400).json({error:'Invalid case'});
+  const modeMap = {'1v1':2,'2v2':4,'3v3':6,'1v1v1':3,'free4all':4};
+  const slots = modeMap[mode] || 2;
+  const cost = CASES[caseId].price;
+  const fresh = db.getUser(req.user.discord_id);
+  if(!fresh||fresh.balance<cost) return res.status(400).json({error:'Insufficient balance'});
+  db.addBalance(req.user.discord_id,-cost);
+  const id = newBattleId();
+  const battle = {
+    id, caseId, mode, slots, status:'waiting',
+    players:[{discord_id:req.user.discord_id, username:req.user.username, avatar:req.user.avatar, isBot:false, ready:false, result:null}],
+    results:[], winner:null, createdAt:Date.now()
+  };
+  battles.set(id,battle);
+  // Auto-cleanup after 10 min if not started
+  setTimeout(()=>{ if(battles.get(id)?.status==='waiting'){ battles.delete(id); }}, 600000);
+  broadcastSSE('battle_created',{id,caseId,mode,slots});
+  res.json({id,caseId,mode,slots,cost});
+});
+
+// JOIN battle
+app.post('/api/battles/join', requireAuth, (req,res)=>{
+  const {battleId} = req.body;
+  const battle = battles.get(battleId);
+  if(!battle) return res.status(404).json({error:'Battle not found'});
+  if(battle.status!=='waiting') return res.status(400).json({error:'Battle already started'});
+  if(battle.players.find(p=>p.discord_id===req.user.discord_id)) return res.status(400).json({error:'Already in this battle'});
+  if(battle.players.length>=battle.slots) return res.status(400).json({error:'Battle is full'});
+  const cost = CASES[battle.caseId].price;
+  const fresh = db.getUser(req.user.discord_id);
+  if(!fresh||fresh.balance<cost) return res.status(400).json({error:'Insufficient balance'});
+  db.addBalance(req.user.discord_id,-cost);
+  battle.players.push({discord_id:req.user.discord_id, username:req.user.username, avatar:req.user.avatar, isBot:false, ready:false, result:null});
+  broadcastBattle(battleId,'player_joined',{username:req.user.username, avatar:req.user.avatar, count:battle.players.length, slots:battle.slots});
+  // Start if full
+  if(battle.players.length===battle.slots) startBattle(battle);
+  res.json({ok:true});
+});
+
+// ADD BOT
+app.post('/api/battles/addbot', requireAuth, (req,res)=>{
+  const {battleId} = req.body;
+  const battle = battles.get(battleId);
+  if(!battle) return res.status(404).json({error:'Battle not found'});
+  if(battle.status!=='waiting') return res.status(400).json({error:'Battle already started'});
+  if(battle.players.length>=battle.slots) return res.status(400).json({error:'Battle is full'});
+  const botNames=['🤖 Crashbot','🤖 LuckyAI','🤖 RNGmaster','🤖 Casebot','🤖 SlotBot'];
+  const botName=botNames[Math.floor(Math.random()*botNames.length)];
+  battle.players.push({discord_id:'bot_'+Date.now(), username:botName, avatar:null, isBot:true, ready:true, result:null});
+  broadcastBattle(battleId,'player_joined',{username:botName,avatar:null,isBot:true,count:battle.players.length,slots:battle.slots});
+  if(battle.players.length===battle.slots) startBattle(battle);
+  res.json({ok:true});
+});
+
+// STREAM battle events
+app.get('/api/battles/stream/:battleId', requireAuth, (req,res)=>{
+  const {battleId}=req.params;
+  res.setHeader('Content-Type','text/event-stream');
+  res.setHeader('Cache-Control','no-cache');
+  res.setHeader('Connection','keep-alive');
+  if(!battleClients.has(battleId)) battleClients.set(battleId,new Set());
+  battleClients.get(battleId).add(res);
+  // Send current state
+  const battle=battles.get(battleId);
+  if(battle) res.write(`event: state\ndata: ${JSON.stringify(sanitizeBattle(battle))}
+
+`);
+  const ping=setInterval(()=>{ try{res.write(':ping\n\n');}catch(e){clearInterval(ping);} },20000);
+  req.on('close',()=>{ battleClients.get(battleId)?.delete(res); clearInterval(ping); });
+});
+
+function sanitizeBattle(b){
+  return {id:b.id,caseId:b.caseId,mode:b.mode,slots:b.slots,status:b.status,
+    players:b.players.map(p=>({discord_id:p.discord_id,username:p.username,avatar:p.avatar,isBot:p.isBot,result:p.result})),
+    winner:b.winner};
+}
+
+async function startBattle(battle){
+  battle.status='spinning';
+  broadcastBattle(battle.id,'start',{players:battle.players.map(p=>({username:p.username,avatar:p.avatar,isBot:p.isBot}))});
+  // Spin each player with a delay for drama
+  for(let i=0;i<battle.players.length;i++){
+    await new Promise(r=>setTimeout(r,800+Math.random()*400));
+    const p=battle.players[i];
+    p.result=spinCase(battle.caseId);
+    broadcastBattle(battle.id,'spin',{playerIdx:i,username:p.username,result:p.result,isBot:p.isBot});
+  }
+  // Find winner(s) — team mode: sum by team
+  let winner=null;
+  if(battle.mode==='2v2'||battle.mode==='3v3'){
+    const teamSize=battle.mode==='2v2'?2:3;
+    const team1=battle.players.slice(0,teamSize), team2=battle.players.slice(teamSize);
+    const t1total=team1.reduce((a,p)=>a+(p.result?.value||0),0);
+    const t2total=team2.reduce((a,p)=>a+(p.result?.value||0),0);
+    const winTeam=t1total>=t2total?team1:team2;
+    winner={team:winTeam.map(p=>p.username),total:Math.max(t1total,t2total)};
+    // Pay winners: split total pot / team size
+    const totalPot=battle.players.reduce((a,p)=>a+(p.result?.value||0),0);
+    winTeam.forEach(p=>{ if(!p.isBot){ db.addBalance(p.discord_id,Math.floor(totalPot/teamSize)); } });
+  } else {
+    // FFA / 1v1 / 1v1v1 — highest single drop wins entire pot
+    const best=battle.players.reduce((a,b)=>(b.result?.value||0)>(a.result?.value||0)?b:a);
+    winner={username:best.username,value:best.result?.value||0,isBot:best.isBot};
+    // Winner gets entire case value sum
+    const totalPot=battle.players.reduce((a,p)=>a+(p.result?.value||0),0);
+    if(!best.isBot) db.addBalance(best.discord_id,totalPot);
+    if(!best.isBot){
+      const profit=totalPot-CASES[battle.caseId].price;
+      checkBigWin(best.username,'casebattle',profit,null,500);
+    }
+  }
+  battle.winner=winner;
+  battle.status='done';
+  broadcastBattle(battle.id,'done',{winner,players:battle.players.map(p=>({username:p.username,avatar:p.avatar,isBot:p.isBot,result:p.result}))});
+  // Cleanup after 5 min
+  setTimeout(()=>battles.delete(battle.id),300000);
+}
 
 // ── LEADERBOARD / STATS / HISTORY ────────────────────────
 app.get('/api/leaderboard', requireAuth, (req, res) => res.json(db.getLeaderboard(20)));
