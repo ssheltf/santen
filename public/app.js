@@ -113,12 +113,50 @@ function renderStrip(el, cells) {
 function initReels() {
   [0,1,2].forEach(i=>{const s=document.getElementById('reel'+i);const c=buildStrip('💎',6);renderStrip(s,c);s.style.transition='none';s.style.top=-((c.length-1)*CELL_H)+'px';});
 }
+// Slot tick sound — rapid mechanical clicking that decelerates
+function playSlotTick(durationMs) {
+  if (!soundEnabled) return;
+  try {
+    const ctx = getAudioCtx();
+    const totalTicks = Math.floor(durationMs / 40); // one tick every ~40ms
+    for (let i = 0; i < totalTicks; i++) {
+      // Ticks are dense at start, sparse at end — mirrors easing curve
+      const progress = i / totalTicks;
+      const ease = 1 - Math.pow(1 - progress, 2); // quadratic
+      const t = ctx.currentTime + (durationMs * ease) / 1000;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      // Pitch drops slightly as reel slows — like a real machine
+      o.type = 'square';
+      o.frequency.value = 180 + (1 - progress) * 80;
+      // Volume quieter near the end
+      const vol = 0.04 * (1 - progress * 0.6);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol, t + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.022);
+      o.start(t); o.stop(t + 0.025);
+    }
+    // Final "clunk" when reel stops
+    const stopTime = ctx.currentTime + durationMs / 1000;
+    const o2 = ctx.createOscillator();
+    const g2 = ctx.createGain();
+    o2.connect(g2); g2.connect(ctx.destination);
+    o2.type = 'sawtooth'; o2.frequency.value = 120;
+    g2.gain.setValueAtTime(0.09, stopTime);
+    g2.gain.exponentialRampToValueAtTime(0.001, stopTime + 0.07);
+    o2.start(stopTime); o2.stop(stopTime + 0.08);
+  } catch(e) {}
+}
+
 function spinReel(el, target, total, delay) {
   return new Promise(resolve=>{
     const cells=buildStrip(target,total); renderStrip(el,cells);
     el.style.transition='none'; el.style.top='0px'; el.getBoundingClientRect();
     setTimeout(()=>{
       const finalTop=-((cells.length-1)*CELL_H), dur=0.6+total*0.05;
+      // Play tick sound for this reel's spin duration
+      playSlotTick(dur * 1000);
       el.style.transition=`top ${dur}s cubic-bezier(0.1,0.85,0.25,1.0)`;
       el.style.top=finalTop+'px';
       el.addEventListener('transitionend',()=>resolve(),{once:true});
