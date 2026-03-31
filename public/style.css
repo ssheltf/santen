@@ -412,3 +412,86 @@ html,body { height:100%; background:var(--bg); color:var(--text); font-family:va
 ::-webkit-scrollbar { width:4px; }
 ::-webkit-scrollbar-track { background:transparent; }
 ::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+
+/* ── SIDEBAR LOGOUT BTN ─────────────────────────────────── */
+.sidebar-logout-btn { background:none; border:none; color:var(--text3); cursor:pointer; font-size:16px; padding:4px 6px; transition:var(--trans); border-radius:6px; flex-shrink:0; line-height:1; }
+.sidebar-logout-btn:hover { color:var(--red); background:rgba(240,82,82,0.1); }
+
+/* ── CHAT COMMANDS ──────────────────────────────────────── */
+.chat-cmds { padding:6px 10px; border-top:1px solid var(--border); display:grid; grid-template-columns:1fr 1fr; gap:3px; }
+.chat-cmds span { font-size:9.5px; color:var(--text3); background:var(--bg3); padding:3px 7px; border-radius:5px; font-family:var(--mono); cursor:default; transition:var(--trans); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.chat-cmds span:hover { color:var(--gold); border-color:rgba(232,184,75,0.2); background:rgba(232,184,75,0.06); }
+
+/* ── CASE BATTLE ────────────────────────────────────────── */
+.cb-top-bar { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
+.cb-section-title { font-size:22px; font-weight:700; letter-spacing:-0.5px; }
+.cb-open-title { font-size:11px; font-weight:600; letter-spacing:2px; text-transform:uppercase; color:var(--text3); margin-bottom:10px; }
+
+/* Create panel */
+.cb-create-panel { background:var(--bg2); border:1px solid var(--border); border-radius:var(--r2); padding:24px; margin-bottom:20px; animation:fadeIn .2s ease; }
+.cb-create-title { font-size:15px; font-weight:700; margin-bottom:16px; }
+.cb-cases-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; margin-bottom:18px; }
+.cb-case-card { background:var(--bg3); border:2px solid var(--border); border-radius:12px; padding:14px; text-align:center; cursor:pointer; transition:var(--trans); }
+.cb-case-card:hover { transform:translateY(-2px); }
+.cb-case-card.selected { border-width:2px; box-shadow:0 4px 20px rgba(232,184,75,0.2); }
+.cb-case-emoji { font-size:30px; margin-bottom:6px; }
+.cb-case-name { font-size:12px; font-weight:600; margin-bottom:3px; }
+.cb-case-price { font-size:11px; font-family:var(--mono); color:var(--text2); }
+.cb-mode-row { display:flex; align-items:center; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
+.cb-mode-label { font-size:11px; font-weight:600; letter-spacing:1px; text-transform:uppercase; color:var(--text3); }
+.cb-modes { display:flex; gap:6px; flex-wrap:wrap; }
+.cb-mode-btn { background:var(--bg3); border:1.5px solid var(--border); border-radius:7px; padding:6px 14px; font-size:12px; font-weight:600; color:var(--text2); cursor:pointer; transition:var(--trans); font-family:var(--font); }
+.cb-mode-btn:hover { border-color:var(--border2); color:var(--text); }
+.cb-mode-btn.active { border-color:var(--gold); color:var(--gold); background:rgba(232,184,75,0.08); }
+.cb-create-footer { display:flex; align-items:center; gap:12px; }
+.cb-cost { font-size:14px; font-weight:700; color:var(--gold); font-family:var(--mono); }
+.cb-cancel-btn { background:none; border:1px solid var(--border); color:var(--text2); padding:0 16px; height:38px; border-radius:8px; cursor:pointer; font-size:12px; font-family:var(--font); transition:var(--trans); }
+.cb-cancel-btn:hover { border-color:var(--border2); color:var(--text); }
+
+/* Open battles list */
+.cb-open-list { display:flex; flex-direction:column; gap:8px; }
+.cb-empty { background:var(--bg2); border:1px solid var(--border); border-radius:var(--r2); padding:40px; text-align:center; color:var(--text3); font-size:13px; }
+.cb-battle-row { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:16px 20px; display:flex; align-items:center; gap:16px; transition:var(--trans); }
+.cb-battle-row:hover { border-color:var(--border2); }
+.cb-battle-case { font-size:26px; }
+.cb-battle-info { flex:1; }
+.cb-battle-name { font-size:14px; font-weight:600; }
+.cb-battle-meta { font-size:11px; color:var(--text2); margin-top:2px; font-family:var(--mono); }
+.cb-battle-players { display:flex; gap:4px; }
+.cb-player-dot { width:28px; height:28px; border-radius:50%; background:var(--bg3); border:1.5px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:11px; overflow:hidden; }
+.cb-player-dot img { width:100%; height:100%; object-fit:cover; }
+.cb-player-dot.empty { opacity:0.35; }
+.cb-join-btn { background:rgba(52,209,122,0.12); border:1.5px solid var(--green); color:var(--green); padding:0 18px; height:36px; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; font-family:var(--font); transition:var(--trans); }
+.cb-join-btn:hover { background:rgba(52,209,122,0.22); }
+
+/* Battle room */
+.cb-room { animation:fadeIn .2s ease; }
+.cb-room-header { display:flex; align-items:center; gap:12px; margin-bottom:24px; }
+.cb-back-btn { background:var(--bg3); border:1px solid var(--border); color:var(--text2); padding:0 14px; height:36px; border-radius:8px; font-size:12px; cursor:pointer; font-family:var(--font); transition:var(--trans); }
+.cb-back-btn:hover { color:var(--text); border-color:var(--border2); }
+.cb-room-title { font-size:18px; font-weight:700; flex:1; }
+.cb-room-id { font-size:11px; color:var(--text3); font-family:var(--mono); }
+.cb-players-row { display:flex; gap:12px; margin-bottom:24px; flex-wrap:wrap; }
+.cb-player-card { flex:1; min-width:140px; background:var(--bg2); border:1px solid var(--border); border-radius:14px; padding:20px 16px; text-align:center; transition:var(--trans); }
+.cb-player-card.waiting { opacity:.6; }
+.cb-player-card.spinning { border-color:var(--gold); box-shadow:0 0 20px rgba(232,184,75,0.15); animation:cbPulse 1s infinite; }
+.cb-player-card.done { border-color:var(--border2); }
+.cb-player-card.winner { border-color:var(--gold); background:rgba(232,184,75,0.06); box-shadow:0 0 30px rgba(232,184,75,0.2); }
+@keyframes cbPulse { 0%,100%{box-shadow:0 0 0 0 rgba(232,184,75,0.3)} 50%{box-shadow:0 0 0 8px rgba(232,184,75,0)} }
+.cb-player-av { width:48px; height:48px; border-radius:50%; border:2px solid var(--border); margin:0 auto 8px; object-fit:cover; display:block; }
+.cb-player-name { font-size:13px; font-weight:600; margin-bottom:4px; }
+.cb-player-status { font-size:11px; color:var(--text3); }
+.cb-player-drop { margin-top:10px; background:var(--bg3); border-radius:8px; padding:8px; }
+.cb-drop-name { font-size:11px; font-weight:600; }
+.cb-drop-value { font-size:16px; font-weight:700; font-family:var(--mono); color:var(--gold); }
+.cb-slot-reel { height:50px; overflow:hidden; position:relative; background:var(--bg3); border-radius:6px; margin-top:8px; }
+.cb-slot-strip { display:flex; flex-direction:column; align-items:stretch; transition:top 0.8s cubic-bezier(0.1,0.85,0.25,1.0); position:absolute; width:100%; }
+.cb-slot-item { height:50px; display:flex; align-items:center; padding:0 8px; gap:6px; font-size:11px; font-weight:500; border-bottom:1px solid var(--border); }
+.cb-slot-item .item-val { margin-left:auto; font-family:var(--mono); font-weight:700; font-size:12px; }
+
+.cb-reel-area { margin-bottom:16px; }
+.cb-result-banner { background:linear-gradient(135deg,rgba(232,184,75,0.15),rgba(232,184,75,0.05)); border:1.5px solid rgba(232,184,75,0.3); border-radius:14px; padding:20px; text-align:center; margin-bottom:16px; animation:fadeIn .4s ease; }
+.cb-result-banner.team-win { background:linear-gradient(135deg,rgba(52,209,122,0.1),rgba(52,209,122,0.04)); border-color:rgba(52,209,122,0.3); }
+.cb-win-title { font-size:22px; font-weight:700; color:var(--gold); }
+.cb-win-sub { font-size:13px; color:var(--text2); margin-top:6px; }
+.cb-room-actions { display:flex; gap:10px; }
