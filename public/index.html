@@ -91,7 +91,8 @@
           <div class="slots-result" id="slots-result"></div>
           <div class="bet-row">
             <div class="bet-ctrl"><button onclick="adjustBet('slots',-50)">−</button><input class="bet-input" id="slots-bet-input" type="number" value="50" min="10" onchange="setBetDirect('slots',this.value)"/><span class="stlabel">ST</span><button onclick="adjustBet('slots',50)">+</button></div>
-            <button class="sbtn" id="slots-btn" onclick="spinSlots()">SPIN</button>
+            <button class="sbtn" id="slots-btn" onclick="spinSlots(false)">SPIN</button>
+            <button class="sbtn sbtn-quick" id="slots-quick-btn" onclick="spinSlots(true)" title="Instant spin">⚡</button>
           </div>
           <div class="paytable">
             <div class="pt-hd">Paytable · ~40% win rate</div>
@@ -300,6 +301,16 @@
                 <button class="cb-mode-btn" onclick="cbSetMode('3v3',this)">3v3</button>
                 <button class="cb-mode-btn" onclick="cbSetMode('1v1v1',this)">1v1v1</button>
                 <button class="cb-mode-btn" onclick="cbSetMode('free4all',this)">Free 4 All</button>
+              </div>
+            </div>
+            <div class="cb-mode-row">
+              <span class="cb-mode-label">Cases</span>
+              <div class="cb-modes">
+                <button class="cb-num-btn cb-mode-btn active" onclick="cbSetNumCases(1,this)">1</button>
+                <button class="cb-num-btn cb-mode-btn" onclick="cbSetNumCases(2,this)">2</button>
+                <button class="cb-num-btn cb-mode-btn" onclick="cbSetNumCases(3,this)">3</button>
+                <button class="cb-num-btn cb-mode-btn" onclick="cbSetNumCases(4,this)">4</button>
+                <button class="cb-num-btn cb-mode-btn" onclick="cbSetNumCases(5,this)">5</button>
               </div>
             </div>
             <div class="cb-create-footer">
