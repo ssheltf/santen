@@ -70,6 +70,7 @@ function showPage(page) {
   if(badge){badge.style.display=['slots','crash','mines','plinko','hilo'].includes(page)?'':'none';}
   document.getElementById('page-title').textContent = titles[page]||page;
   if(page==='leaderboard') loadLeaderboard();
+  if(page==='casebattle') cbInit();
   if(page==='daily') loadDailyStatus();
   if(page==='roulette') setTimeout(()=>drawRouletteWheel(rouletteAngle),50);
   if(page==='plinko') setTimeout(initPlinko,60);
@@ -432,7 +433,7 @@ async function startCrash(){
           crashActive=false;
           if(crashRaf)cancelAnimationFrame(crashRaf);
           mult.textContent=data.at.toFixed(2)+'×';mult.classList.add('crashed');
-          status.textContent='Crashed! 💥';
+          sfx('crash_boom'); status.textContent='Crashed! 💥';
           cashBtn.classList.add('hidden');btn.classList.remove('hidden');btn.disabled=false;
           document.getElementById('crash-result').innerHTML=`<span style="color:var(--red)">Crashed at ${data.at.toFixed(2)}× — Lost ${fmtNum(bets.crash)} ST</span>`;
         }
@@ -489,7 +490,7 @@ async function revealMineCell(idx){
   try{
     const data=await apiPost('/api/mines/reveal',{index:idx});
     if(data.isMine){
-      cell.classList.add('mine-hit');cell.textContent='💣';
+      sfx('explosion'); cell.classList.add('mine-hit');cell.textContent='💣';
       minesState.active=false;
       // Show all mines
       data.mines.forEach(mi=>{if(mi!==idx){cells[mi].classList.add('mine-shown');cells[mi].textContent='💣';}});
@@ -499,7 +500,7 @@ async function revealMineCell(idx){
       updateUserUI();
       document.getElementById('mines-result').innerHTML=`<span style="color:var(--red)">💥 Mine hit! Lost ${fmtNum(bets.mines)} ST</span>`;
     }else{
-      cell.classList.add('revealed');cell.textContent='💎';
+      sfx('click'); cell.classList.add('revealed');cell.textContent='💎';
       minesState.revealed=data.revealed;minesState.mult=data.multiplier;
       document.getElementById('mines-mult').textContent=data.multiplier.toFixed(2)+'×';
       document.getElementById('mines-profit').textContent=fmtNum(Math.floor(bets.mines*data.multiplier))+' ST';
@@ -699,20 +700,29 @@ async function hiloGuess(dir){
     const data=await apiPost('/api/hilo/guess',{direction:dir});
     flipHiloCard(data.newCard.rank,data.newCard.suit,()=>{
       const res=document.getElementById('hilo-result');
-      if(data.win){
+      if(data.tie){
+        res.innerHTML=`<span style="color:var(--text2)">↔ Same rank — no change</span>`;
+        updateHiloHint(data.newCard.rank);
+        document.getElementById('hilo-higher').disabled=false;
+        document.getElementById('hilo-lower').disabled=false;
+        sfx('click');
+      } else if(data.win){
         hiloMult=data.mult;
         document.getElementById('hilo-streak').textContent=data.streak;
         document.getElementById('hilo-mult').textContent=hiloMult.toFixed(2)+'×';
         document.getElementById('hilo-potential').textContent=fmtNum(Math.floor(hiloBet*hiloMult))+' ST';
         res.innerHTML=`<span style="color:var(--green)">✓ Correct! Keep going or cash out</span>`;
+        updateHiloHint(data.newCard.rank);
         document.getElementById('hilo-higher').disabled=false;
         document.getElementById('hilo-lower').disabled=false;
+        sfx('win_small');
       }else{
         hiloActive=false;
         res.innerHTML=`<span style="color:var(--red)">✗ Wrong! Lost ${fmtNum(hiloBet)} ST</span>`;
         document.getElementById('hilo-cashout').style.display='none';
         document.getElementById('hilo-start-btn').textContent='DEAL CARD';
         document.getElementById('hilo-start-btn').onclick=startHilo;
+        sfx('lose');
       }
     });
   }catch(e){showErr('hilo-result',e.message);document.getElementById('hilo-higher').disabled=false;document.getElementById('hilo-lower').disabled=false;}
@@ -855,6 +865,276 @@ async function sendChat(){
 // ── Helpers ───────────────────────────────────────────────
 function showErr(id,msg){const el=document.getElementById(id);if(el)el.innerHTML=`<span style="color:var(--red)">${msg}</span>`;}
 
+// ── SOUND ENGINE ────────────────────────────────────────────
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+let soundEnabled = true;
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new AudioContext();
+  return audioCtx;
+}
+
+function sfx(type) {
+  if (!soundEnabled) return;
+  try {
+    const ctx = getAudioCtx();
+    const g = ctx.createGain();
+    g.connect(ctx.destination);
+    const o = ctx.createOscillator();
+    o.connect(g);
+    const now = ctx.currentTime;
+
+    const sounds = {
+      click:     () => { o.type='sine'; o.frequency.setValueAtTime(600,now); g.gain.setValueAtTime(0.08,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.08); o.start(now); o.stop(now+0.08); },
+      win_small: () => { o.type='triangle'; o.frequency.setValueAtTime(440,now); o.frequency.exponentialRampToValueAtTime(880,now+0.2); g.gain.setValueAtTime(0.12,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.3); o.start(now); o.stop(now+0.3); },
+      jackpot:   () => {
+        [523,659,784,1047].forEach((f,i) => {
+          const o2=ctx.createOscillator(); const g2=ctx.createGain();
+          o2.connect(g2); g2.connect(ctx.destination);
+          o2.type='triangle'; o2.frequency.value=f;
+          g2.gain.setValueAtTime(0.15,now+i*0.1); g2.gain.exponentialRampToValueAtTime(0.001,now+i*0.1+0.25);
+          o2.start(now+i*0.1); o2.stop(now+i*0.1+0.3);
+        });
+        o.disconnect();
+      },
+      lose:      () => { o.type='sawtooth'; o.frequency.setValueAtTime(300,now); o.frequency.exponentialRampToValueAtTime(80,now+0.3); g.gain.setValueAtTime(0.08,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.35); o.start(now); o.stop(now+0.35); },
+      explosion: () => {
+        const buf=ctx.createBuffer(1,ctx.sampleRate*0.4,ctx.sampleRate);
+        const d=buf.getChannelData(0);
+        for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2);
+        const src=ctx.createBufferSource(); src.buffer=buf;
+        const f=ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=400;
+        src.connect(f); f.connect(g); g.gain.setValueAtTime(0.4,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.5);
+        src.start(now); o.disconnect();
+      },
+      coin_spin: () => { o.type='sine'; o.frequency.setValueAtTime(800,now); o.frequency.exponentialRampToValueAtTime(1200,now+0.05); g.gain.setValueAtTime(0.06,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.1); o.start(now); o.stop(now+0.1); },
+      cashout:   () => { o.type='sine'; o.frequency.setValueAtTime(523,now); o.frequency.exponentialRampToValueAtTime(1047,now+0.15); g.gain.setValueAtTime(0.15,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.25); o.start(now); o.stop(now+0.3); },
+      crash_boom:() => {
+        const buf=ctx.createBuffer(1,ctx.sampleRate*0.6,ctx.sampleRate);
+        const d=buf.getChannelData(0);
+        for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,1.5)*0.5;
+        const src=ctx.createBufferSource(); src.buffer=buf;
+        const f=ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=200;
+        src.connect(f); f.connect(g); g.gain.setValueAtTime(0.5,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.7);
+        src.start(now); o.disconnect();
+      },
+      case_spin: () => {
+        [200,300,400].forEach((f,i) => {
+          const o2=ctx.createOscillator(); const g2=ctx.createGain();
+          o2.connect(g2); g2.connect(ctx.destination);
+          o2.type='square'; o2.frequency.value=f;
+          g2.gain.setValueAtTime(0.04,now+i*0.04); g2.gain.exponentialRampToValueAtTime(0.001,now+i*0.04+0.06);
+          o2.start(now+i*0.04); o2.stop(now+i*0.04+0.08);
+        });
+        o.disconnect();
+      },
+    };
+    sounds[type]?.();
+  } catch(e) { /* audio ctx not ready */ }
+}
+
+// ── CASE BATTLE ──────────────────────────────────────────────
+let cbSelectedCase = null;
+let cbSelectedMode = '1v1';
+let cbCurrentBattleId = null;
+let cbBattleStream = null;
+let cbIsCreator = false;
+
+async function cbInit() {
+  try {
+    const [casesRes, battlesRes] = await Promise.all([
+      fetch('/api/cases').then(r=>r.json()),
+      fetch('/api/battles').then(r=>r.json())
+    ]);
+    cbRenderCases(casesRes);
+    cbRenderOpenBattles(battlesRes);
+  } catch(e) {}
+}
+
+function cbRenderCases(cases) {
+  const grid = document.getElementById('cb-cases-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  cases.forEach(c => {
+    const div = document.createElement('div');
+    div.className = 'cb-case-card';
+    div.dataset.id = c.id;
+    div.style.borderColor = cbSelectedCase===c.id ? c.color : '';
+    div.innerHTML = `<div class="cb-case-emoji">${c.emoji}</div><div class="cb-case-name">${c.name}</div><div class="cb-case-price">${fmtNum(c.price)} ST</div>`;
+    div.onclick = () => { cbSelectedCase=c.id; cbUpdateCost(c.price,c.color); document.querySelectorAll('.cb-case-card').forEach(x=>{x.classList.remove('selected');x.style.borderColor='';}); div.classList.add('selected'); div.style.borderColor=c.color; };
+    grid.appendChild(div);
+  });
+}
+
+function cbUpdateCost(price, color) {
+  const el = document.getElementById('cb-create-cost');
+  if (el) el.textContent = `Cost: ${fmtNum(price)} ST`;
+}
+
+function cbRenderOpenBattles(battles) {
+  const list = document.getElementById('cb-open-list');
+  if (!list) return;
+  if (!battles.length) { list.innerHTML = '<div class="cb-empty">No open battles — create one or add bots!</div>'; return; }
+  list.innerHTML = '';
+  battles.forEach(b => {
+    const slots = b.slots;
+    const filled = b.players.length;
+    const row = document.createElement('div');
+    row.className = 'cb-battle-row';
+    const playerDots = Array.from({length:slots}, (_,i) => {
+      const p = b.players[i];
+      if (p) {
+        const av = p.avatar ? `https://cdn.discordapp.com/avatars/${p.discord_id||'0'}/${p.avatar}.png?size=32` : '';
+        return `<div class="cb-player-dot">${av?`<img src="${av}" alt=""/>`:'👤'}</div>`;
+      }
+      return `<div class="cb-player-dot empty">?</div>`;
+    }).join('');
+    row.innerHTML = `
+      <div class="cb-battle-case">${b.caseName?.includes('Diamond')?'💎':b.caseName?.includes('Gold')?'✨':b.caseName?.includes('Silver')?'🎁':b.caseName?.includes('Mystery')?'🔮':'📦'}</div>
+      <div class="cb-battle-info"><div class="cb-battle-name">${b.caseName} · ${b.mode}</div><div class="cb-battle-meta">${filled}/${slots} players · ${fmtNum(b.casePrice)} ST</div></div>
+      <div class="cb-battle-players">${playerDots}</div>
+      <button class="cb-join-btn" onclick="cbJoinBattle('${b.id}')">Join</button>`;
+    list.appendChild(row);
+  });
+}
+
+function cbShowCreate() {
+  document.getElementById('cb-create-panel').classList.remove('hidden');
+  cbInit();
+}
+function cbHideCreate() {
+  document.getElementById('cb-create-panel').classList.add('hidden');
+}
+function cbSetMode(mode, btn) {
+  cbSelectedMode = mode;
+  document.querySelectorAll('.cb-mode-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+async function cbCreateBattle() {
+  if (!cbSelectedCase) { alert('Select a case first!'); return; }
+  try {
+    const data = await apiPost('/api/battles/create', {caseId:cbSelectedCase, mode:cbSelectedMode});
+    cbIsCreator = true;
+    cbEnterRoom(data.id);
+  } catch(e) { alert(e.message); }
+}
+
+async function cbJoinBattle(battleId) {
+  try {
+    await apiPost('/api/battles/join', {battleId});
+    cbIsCreator = false;
+    cbEnterRoom(battleId);
+  } catch(e) { alert(e.message); }
+}
+
+function cbEnterRoom(battleId) {
+  cbCurrentBattleId = battleId;
+  document.getElementById('cb-lobby').classList.add('hidden');
+  document.getElementById('cb-room').classList.remove('hidden');
+  document.getElementById('cb-room-id').textContent = battleId;
+  document.getElementById('cb-result-banner').classList.add('hidden');
+  document.getElementById('cb-room-actions').style.display = '';
+  // Connect SSE
+  if (cbBattleStream) cbBattleStream.close();
+  cbBattleStream = new EventSource(`/api/battles/stream/${battleId}`);
+  cbBattleStream.addEventListener('state', e => { const b=JSON.parse(e.data); cbRenderRoom(b); });
+  cbBattleStream.addEventListener('player_joined', e => { const d=JSON.parse(e.data); cbOnPlayerJoined(d); });
+  cbBattleStream.addEventListener('start', e => { cbOnBattleStart(JSON.parse(e.data)); });
+  cbBattleStream.addEventListener('spin', e => { cbOnSpin(JSON.parse(e.data)); });
+  cbBattleStream.addEventListener('done', e => { cbOnDone(JSON.parse(e.data)); });
+}
+
+function cbRenderRoom(battle) {
+  document.getElementById('cb-room-title').textContent = `${battle.caseId?.charAt(0).toUpperCase()+battle.caseId?.slice(1)} Battle · ${battle.mode}`;
+  const row = document.getElementById('cb-players-row');
+  row.innerHTML = '';
+  const slots = battle.slots;
+  for (let i=0; i<slots; i++) {
+    const p = battle.players[i];
+    const card = document.createElement('div');
+    card.id = `cb-pcard-${i}`;
+    card.className = 'cb-player-card ' + (p ? 'waiting' : 'waiting');
+    if (p) {
+      const av = p.avatar ? `https://cdn.discordapp.com/avatars/${p.discord_id||'0'}/${p.avatar}.png?size=64` : '';
+      card.innerHTML = `<img class="cb-player-av" src="${av||'https://cdn.discordapp.com/embed/avatars/0.png'}" alt=""/><div class="cb-player-name">${p.username}</div><div class="cb-player-status">${battle.status==='waiting'?'Waiting...':'Ready'}</div>`;
+    } else {
+      card.innerHTML = `<div class="cb-player-av" style="background:var(--bg4);border-radius:50%;width:48px;height:48px;margin:0 auto 8px;display:flex;align-items:center;justify-content:center;font-size:20px;">?</div><div class="cb-player-name" style="color:var(--text3)">Waiting...</div><div class="cb-player-status"></div>`;
+    }
+    row.appendChild(card);
+  }
+  // Show/hide add bot button
+  const canAddBot = battle.status==='waiting' && battle.players.length < battle.slots;
+  document.getElementById('cb-room-actions').style.display = canAddBot ? '' : 'none';
+}
+
+function cbOnPlayerJoined(data) {
+  cbInit(); // refresh open list
+  // Re-fetch room state
+  fetch(`/api/battles/stream/${cbCurrentBattleId}`);
+}
+
+function cbOnBattleStart(data) {
+  sfx('case_spin');
+  document.getElementById('cb-room-actions').style.display = 'none';
+  // Set all cards to spinning
+  data.players.forEach((_,i) => {
+    const card = document.getElementById(`cb-pcard-${i}`);
+    if (card) { card.classList.remove('waiting'); card.classList.add('spinning'); const st=card.querySelector('.cb-player-status'); if(st)st.textContent='Spinning...'; }
+  });
+}
+
+function cbOnSpin(data) {
+  sfx('case_spin');
+  const card = document.getElementById(`cb-pcard-${data.playerIdx}`);
+  if (!card) return;
+  card.classList.remove('spinning'); card.classList.add('done');
+  const st = card.querySelector('.cb-player-status'); if(st)st.textContent='';
+  // Show drop result
+  const drop = document.createElement('div');
+  drop.className = 'cb-player-drop';
+  drop.innerHTML = `<div class="cb-drop-name">${data.result.name}</div><div class="cb-drop-value">${fmtNum(data.result.value)} ST</div>`;
+  card.appendChild(drop);
+  if (data.result.value >= 1000) sfx('win_small');
+}
+
+function cbOnDone(data) {
+  sfx(data.winner?.isBot ? 'lose' : 'jackpot');
+  // Highlight winner
+  data.players.forEach((p, i) => {
+    const card = document.getElementById(`cb-pcard-${i}`);
+    if (!card) return;
+    const isWinner = data.winner?.username === p.username || data.winner?.team?.includes(p.username);
+    if (isWinner) card.classList.add('winner');
+  });
+  // Show result banner
+  const banner = document.getElementById('cb-result-banner');
+  banner.classList.remove('hidden');
+  if (data.winner?.team) {
+    banner.innerHTML = `<div class="cb-win-title">🏆 Team ${data.winner.team.join(' & ')} wins!</div><div class="cb-win-sub">Total: ${fmtNum(data.winner.total)} ST</div>`;
+  } else {
+    const isMe = data.winner?.username === user?.username;
+    banner.innerHTML = `<div class="cb-win-title">${data.winner?.isBot?'🤖':'🏆'} ${data.winner?.username} wins!</div><div class="cb-win-sub">${isMe?`You won ${fmtNum(data.winner.value)} ST! 🎉`:`Better luck next time!`}</div>`;
+  }
+  // Re-fetch balance
+  fetch('/api/me').then(r=>r.json()).then(u=>{if(u.balance)updateUserUI(u.balance);});
+}
+
+function cbLeaveRoom() {
+  if (cbBattleStream) { cbBattleStream.close(); cbBattleStream=null; }
+  cbCurrentBattleId = null;
+  document.getElementById('cb-room').classList.add('hidden');
+  document.getElementById('cb-lobby').classList.remove('hidden');
+  cbInit();
+}
+
+async function cbAddBot() {
+  if (!cbCurrentBattleId) return;
+  try { await apiPost('/api/battles/addbot', {battleId:cbCurrentBattleId}); }
+  catch(e) { alert(e.message); }
+}
+
 // ── Theme ──────────────────────────────────────────────────
 function toggleTheme() {
   const current = document.documentElement.getAttribute('data-theme');
@@ -891,6 +1171,13 @@ init();
 // Expose only what HTML onclick handlers need — nothing else
   window.loginWithDiscord = loginWithDiscord;
   window.toggleTheme = toggleTheme;
+  window.cbShowCreate = cbShowCreate;
+  window.cbHideCreate = cbHideCreate;
+  window.cbSetMode = cbSetMode;
+  window.cbCreateBattle = cbCreateBattle;
+  window.cbJoinBattle = cbJoinBattle;
+  window.cbAddBot = cbAddBot;
+  window.cbLeaveRoom = cbLeaveRoom;
   window.logout = logout;
   window.showPage = showPage;
   window.adjustBet = adjustBet;
