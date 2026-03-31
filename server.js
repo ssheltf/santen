@@ -598,6 +598,18 @@ const CASES = {
       {name:'Jackpot',       value:15000,weight:3},
     ]
   },
+  boki: {
+    name:'Boki Case', price:100000, color:'#ff4ecd', emoji:'👑',
+    items:[
+      {name:'Dusty Return',  value:20000,  weight:30},
+      {name:'Solid Drop',    value:60000,  weight:25},
+      {name:'Big Drop',      value:110000, weight:18},
+      {name:'Rare Drop',     value:180000, weight:12},
+      {name:'Epic Drop',     value:300000, weight:8},
+      {name:'Boki Special',  value:600000, weight:5},
+      {name:'THE BOKI',      value:2000000,weight:2},
+    ]
+  },
 };
 
 function spinCase(caseId) {
@@ -630,7 +642,7 @@ function broadcastBattle(battleId, event, data) {
 app.get('/api/battles', requireAuth, (req,res)=>{
   const open = [...battles.values()].filter(b=>b.status==='waiting').map(b=>({
     id:b.id, caseId:b.caseId, caseName:CASES[b.caseId]?.name, casePrice:CASES[b.caseId]?.price,
-    mode:b.mode, slots:b.slots, players:b.players.map(p=>({username:p.username,avatar:p.avatar,isBot:p.isBot})), status:b.status
+    numCases:b.numCases||1, mode:b.mode, slots:b.slots, players:b.players.map(p=>({username:p.username,avatar:p.avatar,isBot:p.isBot})), status:b.status
   }));
   res.json(open);
 });
@@ -642,25 +654,26 @@ app.get('/api/cases', (req,res)=>{
 
 // CREATE battle
 app.post('/api/battles/create', requireAuth, (req,res)=>{
-  const {caseId, mode='1v1'} = req.body;
+  const {caseId, mode='1v1', numCases=1} = req.body;
   if(!CASES[caseId]) return res.status(400).json({error:'Invalid case'});
+  const safeNumCases = Math.max(1, Math.min(5, parseInt(numCases)||1));
   const modeMap = {'1v1':2,'2v2':4,'3v3':6,'1v1v1':3,'free4all':4};
   const slots = modeMap[mode] || 2;
-  const cost = CASES[caseId].price;
+  const costPerPlayer = CASES[caseId].price * safeNumCases;
   const fresh = db.getUser(req.user.discord_id);
-  if(!fresh||fresh.balance<cost) return res.status(400).json({error:'Insufficient balance'});
-  db.addBalance(req.user.discord_id,-cost);
+  if(!fresh||fresh.balance<costPerPlayer) return res.status(400).json({error:'Insufficient balance'});
+  db.addBalance(req.user.discord_id,-costPerPlayer);
   const id = newBattleId();
   const battle = {
-    id, caseId, mode, slots, status:'waiting',
-    players:[{discord_id:req.user.discord_id, username:req.user.username, avatar:req.user.avatar, isBot:false, ready:false, result:null}],
+    id, caseId, numCases:safeNumCases, mode, slots, status:'waiting',
+    players:[{discord_id:req.user.discord_id, username:req.user.username, avatar:req.user.avatar, isBot:false, ready:false, result:null, roundResults:[]}],
     results:[], winner:null, createdAt:Date.now()
   };
   battles.set(id,battle);
   // Auto-cleanup after 10 min if not started
   setTimeout(()=>{ if(battles.get(id)?.status==='waiting'){ battles.delete(id); }}, 600000);
-  broadcastSSE('battle_created',{id,caseId,mode,slots});
-  res.json({id,caseId,mode,slots,cost});
+  broadcastSSE('battle_created',{id,caseId,mode,slots,numCases:safeNumCases});
+  res.json({id,caseId,mode,slots,numCases:safeNumCases,costPerPlayer});
 });
 
 // JOIN battle
@@ -671,29 +684,35 @@ app.post('/api/battles/join', requireAuth, (req,res)=>{
   if(battle.status!=='waiting') return res.status(400).json({error:'Battle already started'});
   if(battle.players.find(p=>p.discord_id===req.user.discord_id)) return res.status(400).json({error:'Already in this battle'});
   if(battle.players.length>=battle.slots) return res.status(400).json({error:'Battle is full'});
-  const cost = CASES[battle.caseId].price;
+  const costPerPlayer = CASES[battle.caseId].price * (battle.numCases||1);
   const fresh = db.getUser(req.user.discord_id);
-  if(!fresh||fresh.balance<cost) return res.status(400).json({error:'Insufficient balance'});
-  db.addBalance(req.user.discord_id,-cost);
-  battle.players.push({discord_id:req.user.discord_id, username:req.user.username, avatar:req.user.avatar, isBot:false, ready:false, result:null});
+  if(!fresh||fresh.balance<costPerPlayer) return res.status(400).json({error:'Insufficient balance'});
+  db.addBalance(req.user.discord_id,-costPerPlayer);
+  battle.players.push({discord_id:req.user.discord_id, username:req.user.username, avatar:req.user.avatar, isBot:false, ready:false, result:null, roundResults:[]});
   broadcastBattle(battleId,'player_joined',{username:req.user.username, avatar:req.user.avatar, count:battle.players.length, slots:battle.slots});
+  broadcastBattle(battleId,'state',sanitizeBattle(battle));
   // Start if full
   if(battle.players.length===battle.slots) startBattle(battle);
   res.json({ok:true});
 });
 
-// ADD BOT
+// ADD BOT — fills ALL remaining empty slots at once
 app.post('/api/battles/addbot', requireAuth, (req,res)=>{
   const {battleId} = req.body;
   const battle = battles.get(battleId);
   if(!battle) return res.status(404).json({error:'Battle not found'});
   if(battle.status!=='waiting') return res.status(400).json({error:'Battle already started'});
   if(battle.players.length>=battle.slots) return res.status(400).json({error:'Battle is full'});
-  const botNames=['🤖 Crashbot','🤖 LuckyAI','🤖 RNGmaster','🤖 Casebot','🤖 SlotBot'];
-  const botName=botNames[Math.floor(Math.random()*botNames.length)];
-  battle.players.push({discord_id:'bot_'+Date.now(), username:botName, avatar:null, isBot:true, ready:true, result:null});
-  broadcastBattle(battleId,'player_joined',{username:botName,avatar:null,isBot:true,count:battle.players.length,slots:battle.slots});
-  if(battle.players.length===battle.slots) startBattle(battle);
+  const botNames=['🤖 Crashbot','🤖 LuckyAI','🤖 RNGmaster','🤖 Casebot','🤖 SlotBot','🤖 BetBot','🤖 GoldAI'];
+  const usedNames = new Set(battle.players.map(p=>p.username));
+  while(battle.players.length < battle.slots) {
+    const available = botNames.filter(n=>!usedNames.has(n));
+    const botName = available.length ? available[Math.floor(Math.random()*available.length)] : '🤖 Bot'+battle.players.length;
+    usedNames.add(botName);
+    battle.players.push({discord_id:'bot_'+Date.now()+'_'+battle.players.length, username:botName, avatar:null, isBot:true, ready:true, result:null});
+    broadcastBattle(battleId,'player_joined',{username:botName,avatar:null,isBot:true,count:battle.players.length,slots:battle.slots});
+  }
+  startBattle(battle);
   res.json({ok:true});
 });
 
@@ -715,49 +734,55 @@ app.get('/api/battles/stream/:battleId', requireAuth, (req,res)=>{
 });
 
 function sanitizeBattle(b){
-  return {id:b.id,caseId:b.caseId,mode:b.mode,slots:b.slots,status:b.status,
+  return {id:b.id,caseId:b.caseId,numCases:b.numCases||1,mode:b.mode,slots:b.slots,status:b.status,
     players:b.players.map(p=>({discord_id:p.discord_id,username:p.username,avatar:p.avatar,isBot:p.isBot,result:p.result})),
     winner:b.winner};
 }
 
 async function startBattle(battle){
+  const numCases = battle.numCases || 1;
   battle.status='spinning';
-  broadcastBattle(battle.id,'start',{players:battle.players.map(p=>({username:p.username,avatar:p.avatar,isBot:p.isBot}))});
-  // Spin each player with a delay for drama
-  for(let i=0;i<battle.players.length;i++){
-    await new Promise(r=>setTimeout(r,800+Math.random()*400));
-    const p=battle.players[i];
-    p.result=spinCase(battle.caseId);
-    broadcastBattle(battle.id,'spin',{playerIdx:i,username:p.username,result:p.result,isBot:p.isBot});
+  broadcastBattle(battle.id,'start',{players:battle.players.map(p=>({username:p.username,avatar:p.avatar,isBot:p.isBot})),numCases});
+
+  // Spin numCases rounds — each round spins all players one case
+  for(let round=0; round<numCases; round++){
+    broadcastBattle(battle.id,'round_start',{round,numCases});
+    for(let i=0;i<battle.players.length;i++){
+      await new Promise(r=>setTimeout(r,700+Math.random()*300));
+      const p=battle.players[i];
+      const spin=spinCase(battle.caseId);
+      p.roundResults = p.roundResults || [];
+      p.roundResults.push(spin);
+      // p.result = running total value for display
+      p.result = { name: spin.name, value: (p.result?.totalValue||0)+spin.value, totalValue:(p.result?.totalValue||0)+spin.value, lastSpin:spin };
+      broadcastBattle(battle.id,'spin',{playerIdx:i,username:p.username,result:spin,totalValue:p.result.totalValue,round,numCases,isBot:p.isBot});
+    }
   }
-  // Find winner(s) — team mode: sum by team
+
+  // Find winner(s)
   let winner=null;
   if(battle.mode==='2v2'||battle.mode==='3v3'){
     const teamSize=battle.mode==='2v2'?2:3;
     const team1=battle.players.slice(0,teamSize), team2=battle.players.slice(teamSize);
-    const t1total=team1.reduce((a,p)=>a+(p.result?.value||0),0);
-    const t2total=team2.reduce((a,p)=>a+(p.result?.value||0),0);
+    const t1total=team1.reduce((a,p)=>a+(p.result?.totalValue||0),0);
+    const t2total=team2.reduce((a,p)=>a+(p.result?.totalValue||0),0);
     const winTeam=t1total>=t2total?team1:team2;
     winner={team:winTeam.map(p=>p.username),total:Math.max(t1total,t2total)};
-    // Pay winners: split total pot / team size
-    const totalPot=battle.players.reduce((a,p)=>a+(p.result?.value||0),0);
+    const totalPot=battle.players.reduce((a,p)=>a+(p.result?.totalValue||0),0);
     winTeam.forEach(p=>{ if(!p.isBot){ db.addBalance(p.discord_id,Math.floor(totalPot/teamSize)); } });
   } else {
-    // FFA / 1v1 / 1v1v1 — highest single drop wins entire pot
-    const best=battle.players.reduce((a,b)=>(b.result?.value||0)>(a.result?.value||0)?b:a);
-    winner={username:best.username,value:best.result?.value||0,isBot:best.isBot};
-    // Winner gets entire case value sum
-    const totalPot=battle.players.reduce((a,p)=>a+(p.result?.value||0),0);
+    const best=battle.players.reduce((a,b)=>(b.result?.totalValue||0)>(a.result?.totalValue||0)?b:a);
+    winner={username:best.username,value:best.result?.totalValue||0,isBot:best.isBot};
+    const totalPot=battle.players.reduce((a,p)=>a+(p.result?.totalValue||0),0);
     if(!best.isBot) db.addBalance(best.discord_id,totalPot);
     if(!best.isBot){
-      const profit=totalPot-CASES[battle.caseId].price;
+      const profit=totalPot-(CASES[battle.caseId].price*numCases);
       checkBigWin(best.username,'casebattle',profit,null,500);
     }
   }
   battle.winner=winner;
   battle.status='done';
   broadcastBattle(battle.id,'done',{winner,players:battle.players.map(p=>({username:p.username,avatar:p.avatar,isBot:p.isBot,result:p.result}))});
-  // Cleanup after 5 min
   setTimeout(()=>battles.delete(battle.id),300000);
 }
 
