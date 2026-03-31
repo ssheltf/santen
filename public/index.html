@@ -57,7 +57,7 @@
         <div id="user-name" class="uname">...</div>
         <div class="ubal"><span id="user-balance">0</span> <span class="stlabel">ST</span></div>
       </div>
-      <span class="profile-arrow">↗</span>
+      <button class="sidebar-logout-btn" onclick="logout()" title="Sign out">⏻</button>
     </div>
   </aside>
 
@@ -277,6 +277,59 @@
       </div>
     </div>
 
+
+    <!-- CASE BATTLE -->
+    <div id="page-casebattle" class="page">
+      <div class="gc wide">
+        <!-- LOBBY VIEW -->
+        <div id="cb-lobby">
+          <div class="cb-top-bar">
+            <div class="cb-section-title">Case Battle</div>
+            <button class="sbtn" onclick="cbShowCreate()">+ Create Battle</button>
+          </div>
+          <!-- CREATE PANEL -->
+          <div id="cb-create-panel" class="cb-create-panel hidden">
+            <div class="cb-create-title">New Battle</div>
+            <div class="cb-cases-grid" id="cb-cases-grid"></div>
+            <div class="cb-mode-row">
+              <span class="cb-mode-label">Mode</span>
+              <div class="cb-modes">
+                <button class="cb-mode-btn active" onclick="cbSetMode('1v1',this)">1v1</button>
+                <button class="cb-mode-btn" onclick="cbSetMode('2v2',this)">2v2</button>
+                <button class="cb-mode-btn" onclick="cbSetMode('3v3',this)">3v3</button>
+                <button class="cb-mode-btn" onclick="cbSetMode('1v1v1',this)">1v1v1</button>
+                <button class="cb-mode-btn" onclick="cbSetMode('free4all',this)">Free 4 All</button>
+              </div>
+            </div>
+            <div class="cb-create-footer">
+              <span id="cb-create-cost" class="cb-cost">Cost: — ST</span>
+              <button class="sbtn" id="cb-create-btn" onclick="cbCreateBattle()">Create & Pay</button>
+              <button class="cb-cancel-btn" onclick="cbHideCreate()">Cancel</button>
+            </div>
+          </div>
+          <!-- OPEN BATTLES -->
+          <div class="cb-open-title">Open Battles</div>
+          <div id="cb-open-list" class="cb-open-list">
+            <div class="cb-empty">No open battles — create one!</div>
+          </div>
+        </div>
+        <!-- BATTLE ROOM VIEW -->
+        <div id="cb-room" class="cb-room hidden">
+          <div class="cb-room-header">
+            <button class="cb-back-btn" onclick="cbLeaveRoom()">← Back</button>
+            <div class="cb-room-title" id="cb-room-title">Battle Room</div>
+            <div class="cb-room-id" id="cb-room-id"></div>
+          </div>
+          <div class="cb-players-row" id="cb-players-row"></div>
+          <div class="cb-reel-area" id="cb-reel-area"></div>
+          <div class="cb-result-banner hidden" id="cb-result-banner"></div>
+          <div class="cb-room-actions" id="cb-room-actions">
+            <button class="sbtn cb-addbot-btn" onclick="cbAddBot()">🤖 Add Bot</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- LEADERBOARD -->
     <div id="page-leaderboard" class="page">
       <div class="gc">
@@ -296,8 +349,8 @@
       <span class="chat-online" id="chat-online">● Online</span>
     </div>
     <div class="chat-messages" id="chat-messages"></div>
-    <div class="chat-commands">
-      <span>.pay @user amount</span><span>.balance</span><span>.top</span><span>.flip amount</span>
+    <div class="chat-cmds">
+      <span>.pay @user [amt]</span><span>.balance</span><span>.top</span><span>.flip [amt]</span>
     </div>
     <div class="chat-input-row">
       <input class="chat-input" id="chat-input" placeholder="Say something..." maxlength="300" onkeydown="chatKeydown(event)"/>
