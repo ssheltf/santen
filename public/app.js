@@ -1130,6 +1130,13 @@ function cbEnterRoom(battleId) {
   cbBattleStream.addEventListener('round_start', e => { cbOnRoundStart(JSON.parse(e.data)); });
   cbBattleStream.addEventListener('spin', e => { cbOnSpin(JSON.parse(e.data)); });
   cbBattleStream.addEventListener('done', e => { cbOnDone(JSON.parse(e.data)); });
+  cbBattleStream.addEventListener('cancelled', e => {
+    const d = JSON.parse(e.data);
+    // Show message then bounce back to lobby
+    const banner = document.getElementById('cb-result-banner');
+    if(banner){ banner.classList.remove('hidden'); banner.innerHTML=`<div class="cb-win-title">⏱️ Battle expired</div><div class="cb-win-sub">${d.reason||'Battle cancelled — entry refunded'}</div>`; }
+    setTimeout(()=>cbLeaveRoom(), 3000);
+  });
 }
 
 function cbRenderRoom(battle) {
@@ -1171,20 +1178,42 @@ function cbOnBattleStart(data) {
 }
 
 function cbOnRoundStart(data) {
-  sfx('case_spin');
   // Update round indicator in title
   const titleEl = document.getElementById('cb-room-title');
   if(titleEl && data.numCases > 1){
     const base = titleEl.textContent.replace(/ · Round \d+\/\d+/,'');
     titleEl.textContent = base + ` · Round ${data.round+1}/${data.numCases}`;
   }
-  // Reset player cards to spinning state for next round
-  document.querySelectorAll('.cb-player-card').forEach(card=>{
-    // Remove old drop from previous round (keep total shown in card header)
-    card.querySelectorAll('.cb-player-drop,.cb-reel-wrap').forEach(el=>el.remove());
-    card.classList.remove('done'); card.classList.add('spinning');
-    const st=card.querySelector('.cb-player-status'); if(st)st.textContent='Opening...';
-  });
+  if(data.round === 0){
+    // First round — just set cards to spinning immediately
+    document.querySelectorAll('.cb-player-card').forEach(card=>{
+      card.classList.remove('waiting','done'); card.classList.add('spinning');
+      const st=card.querySelector('.cb-player-status'); if(st)st.textContent='Opening...';
+    });
+  } else {
+    // Subsequent rounds — the server already paused 3s so players saw last results.
+    // Now move each card's drop into its "history" section, then reset for new spin.
+    document.querySelectorAll('.cb-player-card').forEach(card=>{
+      // Migrate current drop into history list
+      const existingDrop = card.querySelector('.cb-player-drop');
+      let histBox = card.querySelector('.cb-round-history');
+      if(!histBox){
+        histBox = document.createElement('div');
+        histBox.className = 'cb-round-history';
+        card.appendChild(histBox);
+      }
+      if(existingDrop){
+        existingDrop.classList.remove('cb-drop-reveal');
+        existingDrop.classList.add('cb-history-item');
+        histBox.appendChild(existingDrop);
+      }
+      // Remove any lingering reels
+      card.querySelectorAll('.cb-reel-wrap').forEach(el=>el.remove());
+      card.classList.remove('done'); card.classList.add('spinning');
+      const st=card.querySelector('.cb-player-status'); if(st)st.textContent='Opening...';
+    });
+    sfx('case_spin');
+  }
 }
 
 function cbOnSpin(data) {
@@ -1240,10 +1269,11 @@ function cbOnSpin(data) {
 
 function cbOnDone(data) {
   sfx(data.winner?.isBot ? 'lose' : 'jackpot');
-  // Highlight winner
   data.players.forEach((p, i) => {
     const card = document.getElementById(`cb-pcard-${i}`);
     if (!card) return;
+    // Clean up any history boxes — done state shows totals in the drop
+    card.querySelectorAll('.cb-round-history').forEach(el=>el.remove());
     const isWinner = data.winner?.username === p.username || data.winner?.team?.includes(p.username);
     if (isWinner) card.classList.add('winner');
   });
@@ -1271,10 +1301,8 @@ function cbLeaveRoom() {
 
 async function cbAddBot() {
   if (!cbCurrentBattleId) return;
-  const btn = document.querySelector('.cb-addbot-btn');
-  if(btn){ btn.disabled=true; btn.textContent='Starting...'; }
   try { await apiPost('/api/battles/addbot', {battleId:cbCurrentBattleId}); }
-  catch(e) { if(btn){ btn.disabled=false; btn.textContent='🤖 Add Bot'; } }
+  catch(e) { /* battle may have already started, ignore */ }
 }
 
 // ── Theme ──────────────────────────────────────────────────
