@@ -670,8 +670,16 @@ app.post('/api/battles/create', requireAuth, (req,res)=>{
     results:[], winner:null, createdAt:Date.now()
   };
   battles.set(id,battle);
-  // Auto-cleanup after 10 min if not started
-  setTimeout(()=>{ if(battles.get(id)?.status==='waiting'){ battles.delete(id); }}, 600000);
+  // Auto-cleanup after 3 min if not started
+  setTimeout(()=>{
+    const b = battles.get(id);
+    if(b && b.status==='waiting'){
+      // Refund all players who paid
+      b.players.forEach(p=>{ if(!p.isBot) db.addBalance(p.discord_id, CASES[b.caseId].price * (b.numCases||1)); });
+      broadcastBattle(id,'cancelled',{reason:'Battle timed out — entry refunded'});
+      battles.delete(id);
+    }
+  }, 180000);
   broadcastSSE('battle_created',{id,caseId,mode,slots,numCases:safeNumCases});
   res.json({id,caseId,mode,slots,numCases:safeNumCases,costPerPlayer});
 });
@@ -696,7 +704,7 @@ app.post('/api/battles/join', requireAuth, (req,res)=>{
   res.json({ok:true});
 });
 
-// ADD BOT — fills ALL remaining empty slots at once
+// ADD BOT — adds one bot per click, starts battle when full
 app.post('/api/battles/addbot', requireAuth, (req,res)=>{
   const {battleId} = req.body;
   const battle = battles.get(battleId);
@@ -705,15 +713,13 @@ app.post('/api/battles/addbot', requireAuth, (req,res)=>{
   if(battle.players.length>=battle.slots) return res.status(400).json({error:'Battle is full'});
   const botNames=['🤖 Crashbot','🤖 LuckyAI','🤖 RNGmaster','🤖 Casebot','🤖 SlotBot','🤖 BetBot','🤖 GoldAI'];
   const usedNames = new Set(battle.players.map(p=>p.username));
-  while(battle.players.length < battle.slots) {
-    const available = botNames.filter(n=>!usedNames.has(n));
-    const botName = available.length ? available[Math.floor(Math.random()*available.length)] : '🤖 Bot'+battle.players.length;
-    usedNames.add(botName);
-    battle.players.push({discord_id:'bot_'+Date.now()+'_'+battle.players.length, username:botName, avatar:null, isBot:true, ready:true, result:null});
-    broadcastBattle(battleId,'player_joined',{username:botName,avatar:null,isBot:true,count:battle.players.length,slots:battle.slots});
-  }
-  startBattle(battle);
-  res.json({ok:true});
+  const available = botNames.filter(n=>!usedNames.has(n));
+  const botName = available.length ? available[Math.floor(Math.random()*available.length)] : '🤖 Bot'+battle.players.length;
+  battle.players.push({discord_id:'bot_'+Date.now(), username:botName, avatar:null, isBot:true, ready:true, result:null, roundResults:[]});
+  broadcastBattle(battleId,'player_joined',{username:botName,avatar:null,isBot:true,count:battle.players.length,slots:battle.slots});
+  broadcastBattle(battleId,'state',sanitizeBattle(battle));
+  if(battle.players.length===battle.slots) startBattle(battle);
+  res.json({ok:true, full: battle.players.length>=battle.slots});
 });
 
 // STREAM battle events
@@ -753,9 +759,13 @@ async function startBattle(battle){
       const spin=spinCase(battle.caseId);
       p.roundResults = p.roundResults || [];
       p.roundResults.push(spin);
-      // p.result = running total value for display
       p.result = { name: spin.name, value: (p.result?.totalValue||0)+spin.value, totalValue:(p.result?.totalValue||0)+spin.value, lastSpin:spin };
       broadcastBattle(battle.id,'spin',{playerIdx:i,username:p.username,result:spin,totalValue:p.result.totalValue,round,numCases,isBot:p.isBot});
+    }
+    // After all players have spun this round, pause so everyone can see results
+    // before the next round clears the cards. Skip pause after the last round.
+    if(round < numCases - 1){
+      await new Promise(r=>setTimeout(r,3000));
     }
   }
 
