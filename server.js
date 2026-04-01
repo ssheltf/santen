@@ -75,6 +75,7 @@ app.get('/debug', (req, res) => res.json({
   DISCORD_REDIRECT_URI, CASINO_URL,
   DISCORD_BOT_TOKEN: DISCORD_BOT_TOKEN?'SET':'MISSING',
   DISCORD_GUILD_ID: DISCORD_GUILD_ID||'MISSING',
+  DB_FILE: db.getDbPath(),
 }));
 
 // ── Balance helpers ───────────────────────────────────────
