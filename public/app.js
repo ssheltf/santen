@@ -1047,6 +1047,12 @@ function cbUpdateCost(price, color) {
   if (el) el.textContent = `Cost: ${fmtNum(total)} ST per player${cbSelectedNumCases > 1 ? ` (${cbSelectedNumCases}× ${fmtNum(price)} ST)` : ''}`;
 }
 
+function cbGetCaseEmoji(caseId) {
+  if (!window._cbCasesData) return '📦';
+  const c = window._cbCasesData.find(x=>x.id===caseId);
+  return c ? c.emoji : '📦';
+}
+
 function cbRenderOpenBattles(battles) {
   const list = document.getElementById('cb-open-list');
   if (!list) return;
@@ -1066,7 +1072,7 @@ function cbRenderOpenBattles(battles) {
       return `<div class="cb-player-dot empty">?</div>`;
     }).join('');
     row.innerHTML = `
-      <div class="cb-battle-case">${b.caseName?.includes('Diamond')?'💎':b.caseName?.includes('Gold')?'✨':b.caseName?.includes('Silver')?'🎁':b.caseName?.includes('Mystery')?'🔮':'📦'}</div>
+      <div class="cb-battle-case">${cbGetCaseEmoji(b.caseId)}</div>
       <div class="cb-battle-info"><div class="cb-battle-name">${b.caseName} · ${b.mode}${b.numCases>1?' · '+b.numCases+' cases':''}</div><div class="cb-battle-meta">${filled}/${slots} players · ${fmtNum((b.casePrice||0)*(b.numCases||1))} ST ea</div></div>
       <div class="cb-battle-players">${playerDots}</div>
       <button class="cb-join-btn" onclick="cbJoinBattle('${b.id}')">Join</button>`;
@@ -1121,10 +1127,17 @@ function cbEnterRoom(battleId) {
   document.getElementById('cb-room-id').textContent = battleId;
   document.getElementById('cb-result-banner').classList.add('hidden');
   document.getElementById('cb-room-actions').style.display = '';
+  // Store config for rematch — will be confirmed when state arrives
+  _lastBattleConfig = null;
   // Connect SSE
   if (cbBattleStream) cbBattleStream.close();
   cbBattleStream = new EventSource(`/api/battles/stream/${battleId}`);
-  cbBattleStream.addEventListener('state', e => { const b=JSON.parse(e.data); cbRenderRoom(b); });
+  cbBattleStream.addEventListener('state', e => {
+    const b=JSON.parse(e.data);
+    cbRenderRoom(b);
+    // Capture config for rematch
+    if (!_lastBattleConfig) _lastBattleConfig = {caseId:b.caseId, mode:b.mode, numCases:b.numCases||1};
+  });
   cbBattleStream.addEventListener('player_joined', e => { const d=JSON.parse(e.data); cbOnPlayerJoined(d); });
   cbBattleStream.addEventListener('start', e => { cbOnBattleStart(JSON.parse(e.data)); });
   cbBattleStream.addEventListener('round_start', e => { cbOnRoundStart(JSON.parse(e.data)); });
@@ -1139,26 +1152,57 @@ function cbEnterRoom(battleId) {
   });
 }
 
+function cbMakePlayerCard(p, i, status) {
+  const card = document.createElement('div');
+  card.id = `cb-pcard-${i}`;
+  card.className = 'cb-player-card waiting';
+  if (p) {
+    const av = p.avatar ? `https://cdn.discordapp.com/avatars/${p.discord_id||'0'}/${p.avatar}.png?size=64` : 'https://cdn.discordapp.com/embed/avatars/0.png';
+    card.innerHTML = `<img class="cb-player-av" src="${av}" alt=""/><div class="cb-player-name">${p.username}</div><div class="cb-player-status">${status==='waiting'?'Waiting...':'Ready'}</div>`;
+  } else {
+    card.innerHTML = `<div class="cb-player-av cb-av-empty">?</div><div class="cb-player-name" style="color:var(--text3)">Waiting...</div><div class="cb-player-status"></div>`;
+  }
+  return card;
+}
+
 function cbRenderRoom(battle) {
   const numC = battle.numCases||1;
   document.getElementById('cb-room-title').textContent = `${battle.caseId?.charAt(0).toUpperCase()+battle.caseId?.slice(1)} Battle · ${battle.mode}${numC>1?' · '+numC+' cases':''}`;
   const row = document.getElementById('cb-players-row');
   row.innerHTML = '';
-  const slots = battle.slots;
-  for (let i=0; i<slots; i++) {
-    const p = battle.players[i];
-    const card = document.createElement('div');
-    card.id = `cb-pcard-${i}`;
-    card.className = 'cb-player-card ' + (p ? 'waiting' : 'waiting');
-    if (p) {
-      const av = p.avatar ? `https://cdn.discordapp.com/avatars/${p.discord_id||'0'}/${p.avatar}.png?size=64` : '';
-      card.innerHTML = `<img class="cb-player-av" src="${av||'https://cdn.discordapp.com/embed/avatars/0.png'}" alt=""/><div class="cb-player-name">${p.username}</div><div class="cb-player-status">${battle.status==='waiting'?'Waiting...':'Ready'}</div>`;
-    } else {
-      card.innerHTML = `<div class="cb-player-av" style="background:var(--bg4);border-radius:50%;width:48px;height:48px;margin:0 auto 8px;display:flex;align-items:center;justify-content:center;font-size:20px;">?</div><div class="cb-player-name" style="color:var(--text3)">Waiting...</div><div class="cb-player-status"></div>`;
+
+  const isTeamMode = battle.mode === '2v2' || battle.mode === '3v3';
+  const teamSize = battle.mode === '3v3' ? 3 : 2;
+
+  if (isTeamMode) {
+    // Team layout: team1 block | VS | team2 block
+    row.classList.add('cb-team-layout');
+
+    const team1 = document.createElement('div');
+    team1.className = 'cb-team cb-team-1';
+    const team2 = document.createElement('div');
+    team2.className = 'cb-team cb-team-2';
+
+    for (let i = 0; i < battle.slots; i++) {
+      const p = battle.players[i];
+      const card = cbMakePlayerCard(p, i, battle.status);
+      (i < teamSize ? team1 : team2).appendChild(card);
     }
-    row.appendChild(card);
+
+    const vs = document.createElement('div');
+    vs.className = 'cb-vs-divider';
+    vs.textContent = 'VS';
+
+    row.appendChild(team1);
+    row.appendChild(vs);
+    row.appendChild(team2);
+  } else {
+    row.classList.remove('cb-team-layout');
+    for (let i = 0; i < battle.slots; i++) {
+      row.appendChild(cbMakePlayerCard(battle.players[i], i, battle.status));
+    }
   }
-  // Show/hide add bot button
+
   const canAddBot = battle.status==='waiting' && battle.players.length < battle.slots;
   document.getElementById('cb-room-actions').style.display = canAddBot ? '' : 'none';
 }
@@ -1222,17 +1266,25 @@ function cbOnSpin(data) {
   if (!card) return;
   card.classList.remove('spinning');
   const st = card.querySelector('.cb-player-status'); if(st)st.textContent='';
-  // Animate case opening: slide down a reel of items, land on the winner
+
   const caseInfo = window._cbCasesData ? window._cbCasesData.find(c=>c.id===data.result.caseId) : null;
+
+  // Detect jackpot tier — top 2 items by value get slow mo treatment
+  let isJackpot = false;
+  if (caseInfo && caseInfo.items) {
+    const sorted = [...caseInfo.items].sort((a,b)=>b.value-a.value);
+    const jackpotThreshold = sorted[1]?.value || sorted[0]?.value; // top 2
+    isJackpot = data.result.value >= jackpotThreshold;
+  }
+
   const fakeItems = [];
-  // Build a strip of 12 random items from the case, then the real result last
   if(caseInfo && caseInfo.items){
     for(let i=0;i<12;i++) fakeItems.push(caseInfo.items[Math.floor(Math.random()*caseInfo.items.length)]);
   }
   fakeItems.push(data.result);
 
   const reelWrap = document.createElement('div');
-  reelWrap.className = 'cb-reel-wrap';
+  reelWrap.className = 'cb-reel-wrap' + (isJackpot ? ' cb-reel-jackpot' : '');
   const reelInner = document.createElement('div');
   reelInner.className = 'cb-reel-inner';
   fakeItems.forEach((item,idx) => {
@@ -1244,50 +1296,86 @@ function cbOnSpin(data) {
   reelWrap.appendChild(reelInner);
   card.appendChild(reelWrap);
 
-  // Animate: start at top, slide to last item
-  const cellH = 56; // px per cell
+  const cellH = 56;
   const totalH = (fakeItems.length-1)*cellH;
   reelInner.style.transform = 'translateY(0)';
   reelInner.getBoundingClientRect();
-  setTimeout(()=>{
-    reelInner.style.transition = 'transform 1.2s cubic-bezier(0.15,0.85,0.3,1.0)';
-    reelInner.style.transform = `translateY(-${totalH}px)`;
-  }, 60);
+
+  // Jackpot: fast spin then dramatically slow at the end
+  // Normal: standard 1.2s ease
+  const reelDuration = isJackpot ? 2.8 : 1.2;
+  const reelEasing = isJackpot
+    ? 'cubic-bezier(0.05,0.92,0.12,1.0)'   // fast rush then crawl to stop
+    : 'cubic-bezier(0.15,0.85,0.3,1.0)';
+
+  if (isJackpot) {
+    // Dramatic build: flash the reel gold, add glow to card
+    card.classList.add('cb-jackpot-incoming');
+    sfx('jackpot');
+  }
 
   setTimeout(()=>{
+    reelInner.style.transition = `transform ${reelDuration}s ${reelEasing}`;
+    reelInner.style.transform = `translateY(-${totalH}px)`;
+  }, isJackpot ? 400 : 60); // jackpot: brief pause before spin for drama
+
+  const revealDelay = isJackpot ? (400 + reelDuration * 1000 + 300) : 1350;
+  setTimeout(()=>{
+    card.classList.remove('cb-jackpot-incoming');
     card.classList.add('done');
+    if (isJackpot) card.classList.add('cb-jackpot-winner');
     reelWrap.remove();
     const drop = document.createElement('div');
     drop.className = 'cb-player-drop cb-drop-reveal';
     const showTotal = data.numCases > 1 && data.totalValue !== undefined;
-    drop.innerHTML = `<div class="cb-drop-name">${data.result.name}</div><div class="cb-drop-value">${fmtNum(data.result.value)} ST</div>`
+    drop.innerHTML = `<div class="cb-drop-name">${isJackpot?'✨ ':''} ${data.result.name}</div><div class="cb-drop-value">${fmtNum(data.result.value)} ST</div>`
       + (showTotal && data.round > 0 ? `<div class="cb-drop-total">Total: ${fmtNum(data.totalValue)} ST</div>` : '');
     card.appendChild(drop);
-    if(data.result.value >= 1000) sfx('win_small');
-  }, 1350);
+    sfx(isJackpot ? 'jackpot' : data.result.value >= 1000 ? 'win_small' : 'click');
+  }, revealDelay);
 }
+
+// Store last battle config for rematch
+let _lastBattleConfig = null;
 
 function cbOnDone(data) {
   sfx(data.winner?.isBot ? 'lose' : 'jackpot');
   data.players.forEach((p, i) => {
     const card = document.getElementById(`cb-pcard-${i}`);
     if (!card) return;
-    // Clean up any history boxes — done state shows totals in the drop
     card.querySelectorAll('.cb-round-history').forEach(el=>el.remove());
     const isWinner = data.winner?.username === p.username || data.winner?.team?.includes(p.username);
     if (isWinner) card.classList.add('winner');
   });
-  // Show result banner
+
   const banner = document.getElementById('cb-result-banner');
   banner.classList.remove('hidden');
+
+  let resultHTML = '';
   if (data.winner?.team) {
-    banner.innerHTML = `<div class="cb-win-title">🏆 Team ${data.winner.team.join(' & ')} wins!</div><div class="cb-win-sub">Total: ${fmtNum(data.winner.total)} ST</div>`;
+    resultHTML = `<div class="cb-win-title">🏆 Team ${data.winner.team.join(' & ')} wins!</div><div class="cb-win-sub">Total: ${fmtNum(data.winner.total)} ST</div>`;
   } else {
     const isMe = data.winner?.username === user?.username;
-    banner.innerHTML = `<div class="cb-win-title">${data.winner?.isBot?'🤖':'🏆'} ${data.winner?.username} wins!</div><div class="cb-win-sub">${isMe?`You won ${fmtNum(data.winner.value)} ST! 🎉`:`Better luck next time!`}</div>`;
+    resultHTML = `<div class="cb-win-title">${data.winner?.isBot?'🤖':'🏆'} ${data.winner?.username} wins!</div><div class="cb-win-sub">${isMe?`You won ${fmtNum(data.winner.value)} ST! 🎉`:'Better luck next time!'}</div>`;
   }
-  // Re-fetch balance
+  // Rematch button — only show if we have the config stored
+  resultHTML += `<div class="cb-rematch-row"><button class="cb-rematch-btn" onclick="cbRematch()">🔄 Rematch</button><button class="cb-back-btn" onclick="cbLeaveRoom()" style="margin-top:0">← Lobby</button></div>`;
+  banner.innerHTML = resultHTML;
+
   fetch('/api/me').then(r=>r.json()).then(u=>{if(u.balance)updateUserUI(u.balance);});
+}
+
+async function cbRematch() {
+  if (!_lastBattleConfig) { cbLeaveRoom(); return; }
+  const { caseId, mode, numCases } = _lastBattleConfig;
+  cbSelectedCase = caseId;
+  cbSelectedMode = mode;
+  cbSelectedNumCases = numCases || 1;
+  try {
+    const data = await apiPost('/api/battles/create', {caseId, mode, numCases: cbSelectedNumCases});
+    cbIsCreator = true;
+    cbEnterRoom(data.id);
+  } catch(e) { alert(e.message); }
 }
 
 function cbLeaveRoom() {
@@ -1345,6 +1433,7 @@ init();
   window.cbHideCreate = cbHideCreate;
   window.cbSetMode = cbSetMode;
   window.cbSetNumCases = cbSetNumCases;
+  window.cbRematch = cbRematch;
   window.cbCreateBattle = cbCreateBattle;
   window.cbJoinBattle = cbJoinBattle;
   window.cbAddBot = cbAddBot;
