@@ -11,7 +11,8 @@
 
 <!-- LANDING -->
 <div id="landing-screen" class="landing-screen hidden">
-  <div class="landing-bg"><div class="orb orb1"></div><div class="orb orb2"></div><div class="orb orb3"></div></div>
+  <canvas id="landing-particles"></canvas>
+  <div class="landing-bg"><div class="orb orb1"></div><div class="orb orb2"></div><div class="orb orb3"></div><div class="orb orb4"></div></div>
   <nav class="landing-nav">
     <div class="nav-logo"><span class="ls">S</span><span class="lc">ANTEN</span></div>
     <button class="theme-btn" onclick="toggleTheme()" title="Toggle theme" id="theme-btn-landing">🌙</button>
@@ -41,7 +42,7 @@
       <a class="ni active" data-page="slots"       onclick="showPage('slots')">      <i>🎰</i>Slots</a>
       <a class="ni"        data-page="blackjack"   onclick="showPage('blackjack')">  <i>🃏</i>Blackjack</a>
       <a class="ni"        data-page="roulette"    onclick="showPage('roulette')">   <i>🎡</i>Roulette</a>
-      <a class="ni"        data-page="crash"       onclick="showPage('crash')">      <i>📈</i>Crash</a>
+      <a class="ni ni-disabled" data-page="crash" onclick="showPage('crash')" title="Temporarily unavailable"><i>📈</i>Crash <span class="ni-soon">OFF</span></a>
       <a class="ni"        data-page="mines"       onclick="showPage('mines')">      <i>💣</i>Mines</a>
       <a class="ni"        data-page="plinko"      onclick="showPage('plinko')">     <i>🔵</i>Plinko</a>
       <a class="ni"        data-page="coinflip"    onclick="showPage('coinflip')">   <i>🪙</i>Coinflip</a>
