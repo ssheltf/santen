@@ -4,9 +4,8 @@
 
 // ── State ────────────────────────────────────────────────
 let user = null;
-let bets = { slots:50, bj:50, roulette:50, cf:50, crash:50, plinko:50, hilo:50, mines:50 };
+let bets = { slots:50, bj:50, roulette:50, cf:50, plinko:50, hilo:50, mines:50 };
 let bjState = null, rouletteBet = null, coinChoice = null;
-let crashInterval = null, crashMult = 1.0, crashActive = false, crashCashedOut = false;
 let minesState = null, mineCount = 5;
 let hiloActive = false, hiloBet = 0, hiloMult = 1;
 let plinkoRunning = false;
@@ -34,7 +33,6 @@ function showApp() {
   showPage('slots');
   initReels();
   drawRouletteWheel(0);
-  initCrashCanvas();
   buildMinesGrid();
   initPlinko();
   initChat();
@@ -92,22 +90,12 @@ function showPage(page) {
   document.getElementById('page-'+page).classList.add('active');
   const nav = document.querySelector(`.ni[data-page="${page}"]`);
   if(nav) nav.classList.add('active');
-  const titles={slots:'Slots',blackjack:'Blackjack',roulette:'Roulette',crash:'Crash',mines:'Mines',plinko:'Plinko',coinflip:'Coinflip',hilo:'Hi-Lo',daily:'Daily Reward',leaderboard:'Leaderboard'};
+  const titles={slots:'Slots',blackjack:'Blackjack',roulette:'Roulette',mines:'Mines',plinko:'Plinko',coinflip:'Coinflip',hilo:'Hi-Lo',daily:'Daily Reward',leaderboard:'Leaderboard'};
   const badge=document.getElementById('topbar-badge');
-  if(badge){badge.style.display=['slots','crash','mines','plinko','hilo'].includes(page)?'':'none';}
+  if(badge){badge.style.display=['slots','mines','plinko','hilo'].includes(page)?'':'none';}
   document.getElementById('page-title').textContent = titles[page]||page;
   if(page==='leaderboard') loadLeaderboard();
   if(page==='casebattle'){cbInit();cbStartAutoRefresh();}else{cbStopAutoRefresh();}
-  if(page==='crash'){
-    // Crash is disabled — silently redirect to slots instead
-    document.getElementById('page-crash').classList.remove('active');
-    document.getElementById('page-slots').classList.add('active');
-    document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
-    const slotsNav=document.querySelector('.ni[data-page="slots"]');
-    if(slotsNav) slotsNav.classList.add('active');
-    document.getElementById('page-title').textContent='Slots';
-    return;
-  }
   if(page==='daily') loadDailyStatus();
   if(page==='roulette') setTimeout(()=>drawRouletteWheel(rouletteAngle),50);
   if(page==='plinko') setTimeout(initPlinko,60);
@@ -456,76 +444,6 @@ async function flipCoin(){
     requestAnimationFrame(frame);
 
   }catch(e){showErr('cf-result',e.message);btn.disabled=false;}
-}
-
-// ── CRASH (smooth, Stake-style) ────────────────────────────
-let crashCanvas,crashCtx,crashPoints=[],crashRaf=null,crashStartTime=null;
-function initCrashCanvas(){
-  crashCanvas=document.getElementById('crash-canvas');if(!crashCanvas)return;
-  crashCtx=crashCanvas.getContext('2d');
-  drawCrashIdle();
-}
-function drawCrashIdle(){
-  if(!crashCtx)return;
-  const {width:W,height:H}=crashCanvas;
-  crashCtx.clearRect(0,0,W,H);
-  // Grid
-  crashCtx.strokeStyle='rgba(255,255,255,0.04)';crashCtx.lineWidth=1;
-  for(let x=0;x<W;x+=W/6){crashCtx.beginPath();crashCtx.moveTo(x,0);crashCtx.lineTo(x,H);crashCtx.stroke();}
-  for(let y=0;y<H;y+=H/4){crashCtx.beginPath();crashCtx.moveTo(0,y);crashCtx.lineTo(W,y);crashCtx.stroke();}
-}
-function drawCrashFrame(){
-  if(!crashCtx||crashPoints.length<2)return;
-  const {width:W,height:H}=crashCanvas;
-  crashCtx.clearRect(0,0,W,H);
-  // Grid
-  crashCtx.strokeStyle='rgba(255,255,255,0.04)';crashCtx.lineWidth=1;
-  for(let x=0;x<W;x+=W/6){crashCtx.beginPath();crashCtx.moveTo(x,0);crashCtx.lineTo(x,H);crashCtx.stroke();}
-  for(let y=0;y<H;y+=H/4){crashCtx.beginPath();crashCtx.moveTo(0,y);crashCtx.lineTo(W,y);crashCtx.stroke();}
-  // Curve — map mult to canvas coords
-  const maxMult=Math.max(crashMult*1.1,2);
-  function mx(t){return t*(W-30)+15;}
-  function my(m){return H-10-(m-1)/(maxMult-1)*(H-20);}
-  const n=crashPoints.length;
-  // Fill under curve
-  const grad=crashCtx.createLinearGradient(0,H,0,my(crashMult));
-  grad.addColorStop(0,'rgba(201,168,76,0.03)');grad.addColorStop(1,'rgba(201,168,76,0.18)');
-  crashCtx.beginPath();crashCtx.moveTo(mx(0),H);
-  crashPoints.forEach((p,i)=>crashCtx.lineTo(mx(i/(n-1)),my(p)));
-  crashCtx.lineTo(mx((n-1)/(n-1)),H);crashCtx.closePath();
-  crashCtx.fillStyle=grad;crashCtx.fill();
-  // Line
-  crashCtx.beginPath();crashCtx.moveTo(mx(0),my(1));
-  crashPoints.forEach((p,i)=>crashCtx.lineTo(mx(i/(n-1)),my(p)));
-  crashCtx.strokeStyle='#c9a84c';crashCtx.lineWidth=2.5;
-  crashCtx.shadowColor='rgba(201,168,76,0.5)';crashCtx.shadowBlur=8;crashCtx.stroke();
-  crashCtx.shadowBlur=0;
-  // Dot at end
-  const ex=mx((n-1)/(n-1)),ey=my(crashMult);
-  crashCtx.beginPath();crashCtx.arc(ex,ey,5,0,Math.PI*2);
-  crashCtx.fillStyle='#f0d080';crashCtx.fill();
-  crashCtx.beginPath();crashCtx.arc(ex,ey,9,0,Math.PI*2);
-  crashCtx.strokeStyle='rgba(201,168,76,0.35)';crashCtx.lineWidth=2;crashCtx.stroke();
-}
-async function startCrash(){
-  const btn=document.getElementById('crash-btn');
-  if(btn){ btn.classList.add('crash-disabled-shake'); setTimeout(()=>btn.classList.remove('crash-disabled-shake'),500); }
-}
-async function cashOut(){
-  if(!crashActive||crashCashedOut)return;
-  crashCashedOut=true;crashActive=false;
-  if(crashRaf)cancelAnimationFrame(crashRaf);
-  // Send NO payout/bet — server recalculates from session state
-  try{
-    const d=await apiPost('/api/crash/cashout',{});
-    updateUserUI(d.newBalance);
-    document.getElementById('crash-status').textContent='Cashed out!';
-    document.getElementById('crash-result').innerHTML=`<span style="color:var(--gold)">Cashed out ${crashMult.toFixed(2)}× — +${fmtNum(d.profit)} ST!</span>`;
-  }catch(e){
-    document.getElementById('crash-result').innerHTML=`<span style="color:var(--red)">${e.message}</span>`;
-  }
-  document.getElementById('cashout-btn').classList.add('hidden');
-  const btn=document.getElementById('crash-btn');btn.classList.remove('hidden');btn.disabled=false;
 }
 
 // ── MINES ─────────────────────────────────────────────────
@@ -980,15 +898,6 @@ function sfx(type) {
       },
       coin_spin: () => { o.type='sine'; o.frequency.setValueAtTime(800,now); o.frequency.exponentialRampToValueAtTime(1200,now+0.05); g.gain.setValueAtTime(0.06,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.1); o.start(now); o.stop(now+0.1); },
       cashout:   () => { o.type='sine'; o.frequency.setValueAtTime(523,now); o.frequency.exponentialRampToValueAtTime(1047,now+0.15); g.gain.setValueAtTime(0.15,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.25); o.start(now); o.stop(now+0.3); },
-      crash_boom:() => {
-        const buf=ctx.createBuffer(1,ctx.sampleRate*0.6,ctx.sampleRate);
-        const d=buf.getChannelData(0);
-        for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,1.5)*0.5;
-        const src=ctx.createBufferSource(); src.buffer=buf;
-        const f=ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=200;
-        src.connect(f); f.connect(g); g.gain.setValueAtTime(0.5,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.7);
-        src.start(now); o.disconnect();
-      },
       case_spin: () => {
         [200,300,400].forEach((f,i) => {
           const o2=ctx.createOscillator(); const g2=ctx.createGain();
@@ -1495,24 +1404,8 @@ function initDevtoolsGuard() {
     window.console.table = noop;
     window.console.dir   = noop;
     window.console.error = noop;
-    // warn shows one-time message then becomes noop too
-    window.console.warn  = () => {
-      window.console.warn = noop;
-    };
+    window.console.warn  = noop;
   } catch(e) {}
-
-  // Devtools size detector — when devtools docks, the inner window shrinks
-  let _dtOpen = false;
-  function checkDevtools() {
-    const widthDiff  = window.outerWidth  - window.innerWidth;
-    const heightDiff = window.outerHeight - window.innerHeight;
-    const open = widthDiff > 160 || heightDiff > 160;
-    if (open !== _dtOpen) {
-      _dtOpen = open;
-      showDevtoolsOverlay(open);
-    }
-  }
-  setInterval(checkDevtools, 1000);
 
   // Block right-click context menu
   document.addEventListener('contextmenu', e => e.preventDefault());
@@ -1529,26 +1422,6 @@ function initDevtoolsGuard() {
       e.stopPropagation();
     }
   });
-}
-
-function showDevtoolsOverlay(show) {
-  let ov = document.getElementById('devtools-overlay');
-  if (show) {
-    if (!ov) {
-      ov = document.createElement('div');
-      ov.id = 'devtools-overlay';
-      ov.innerHTML = `
-        <div class="dt-box">
-          <div class="dt-icon">🔒</div>
-          <div class="dt-title">Developer Tools Detected</div>
-          <div class="dt-msg">Close DevTools to continue playing.<br>All game logic runs server-side — there is nothing to modify here.</div>
-        </div>`;
-      document.body.appendChild(ov);
-    }
-    ov.style.display = 'flex';
-  } else {
-    if (ov) ov.style.display = 'none';
-  }
 }
 
 function initLandingParticles() {
@@ -1632,8 +1505,6 @@ function initLandingParticles() {
   window.spinRoulette = spinRoulette;
   window.setCoinChoice = setCoinChoice;
   window.flipCoin = flipCoin;
-  window.startCrash = startCrash;
-  window.cashOut = cashOut;
   window.adjustMines = adjustMines;
   window.startMines = startMines;
   window.minesCashout = minesCashout;
