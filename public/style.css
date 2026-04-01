@@ -600,3 +600,8 @@ html,body { height:100%; background:var(--bg); color:var(--text); font-family:va
 
 /* ── Balance counter glow on change ─────────────────────────── */
 .bal-amt { transition:color 0.2s; }
+
+/* ── Reverse mode tag ─────────────────────────────────────── */
+.cb-reverse-tag { display:block; font-size:11px; font-weight:700; color:var(--red); letter-spacing:1px; margin:4px 0 2px; }
+.cb-mode-reverse { border-color:rgba(240,82,82,0.4) !important; color:var(--red) !important; }
+.cb-mode-reverse.active { background:rgba(240,82,82,0.12) !important; border-color:var(--red) !important; }
