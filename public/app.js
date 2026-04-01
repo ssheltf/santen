@@ -40,48 +40,13 @@ function showApp() {
   initChat();
 }
 
-let _balAnimFrame = null;
-let _balAnimFrom = null;   // the value we are currently animating FROM
-let _balTarget   = null;   // the final value we are heading TO
-
-function _setBalanceText(n) {
-  const fmt = fmtNum(n);
-  document.getElementById('user-balance').textContent = fmt;
-  document.getElementById('header-balance').textContent = fmt + ' ST';
-}
-
-function animateBalance(to) {
-  // Snap _balAnimFrom to wherever the counter visually is right now
-  if (_balAnimFrom === null) _balAnimFrom = to; // first call ever — no animation
-  if (_balAnimFrame) cancelAnimationFrame(_balAnimFrame);
-  _balTarget = to;
-  const from = _balAnimFrom;
-  if (from === to) { _setBalanceText(to); _balAnimFrom = to; return; }
-  const diff = to - from;
-  const duration = Math.min(800, Math.max(250, Math.abs(diff) / 8));
-  const start = performance.now();
-  function step(now) {
-    const p = Math.min(1, (now - start) / duration);
-    const e = 1 - Math.pow(1 - p, 3); // ease-out cubic
-    const cur = Math.round(from + diff * e);
-    _balAnimFrom = cur; // keep track of visual position mid-flight
-    _setBalanceText(cur);
-    if (p < 1) {
-      _balAnimFrame = requestAnimationFrame(step);
-    } else {
-      _balAnimFrom = to;
-      _balAnimFrame = null;
-    }
-  }
-  _balAnimFrame = requestAnimationFrame(step);
-}
-
 function updateUserUI(bal) {
   if (!user) return;
   if (bal !== undefined) user.balance = bal;
-  if (typeof user.balance !== 'number') return;
+  const n = fmtNum(user.balance);
   document.getElementById('user-name').textContent = user.username;
-  animateBalance(user.balance);
+  document.getElementById('user-balance').textContent = n;
+  document.getElementById('header-balance').textContent = n + ' ST';
   const src = user.avatar
     ? `https://cdn.discordapp.com/avatars/${user.discord_id}/${user.avatar}.png?size=64`
     : `https://cdn.discordapp.com/embed/avatars/0.png`;
