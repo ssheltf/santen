@@ -40,19 +40,46 @@ function showApp() {
   initChat();
 }
 
+// Balance roll animation — safe, no shared RAF state
+let _balRaf = null, _balFrom = null;
 function updateUserUI(bal) {
   if (!user) return;
+  const prev = (_balFrom !== null) ? _balFrom : (bal !== undefined ? bal : user.balance);
   if (bal !== undefined) user.balance = bal;
-  const n = fmtNum(user.balance);
+  if (typeof user.balance !== 'number') return;
   document.getElementById('user-name').textContent = user.username;
-  document.getElementById('user-balance').textContent = n;
-  document.getElementById('header-balance').textContent = n + ' ST';
   const src = user.avatar
     ? `https://cdn.discordapp.com/avatars/${user.discord_id}/${user.avatar}.png?size=64`
     : `https://cdn.discordapp.com/embed/avatars/0.png`;
   document.getElementById('user-avatar').src = src;
   const pm = document.getElementById('pm-avatar');
   if (pm) pm.src = src;
+  // Animate balance counter
+  if (_balRaf) { cancelAnimationFrame(_balRaf); _balRaf = null; }
+  const target = user.balance;
+  const from = (prev === target) ? target : prev;
+  _balFrom = from;
+  if (from === target) {
+    const n = fmtNum(target);
+    document.getElementById('user-balance').textContent = n;
+    document.getElementById('header-balance').textContent = n + ' ST';
+    return;
+  }
+  const diff = target - from;
+  const dur = Math.min(700, Math.max(200, Math.abs(diff) / 10));
+  const t0 = performance.now();
+  function step(now) {
+    const p = Math.min(1, (now - t0) / dur);
+    const e = 1 - Math.pow(1 - p, 3);
+    const cur = Math.round(from + diff * e);
+    _balFrom = cur;
+    const n = fmtNum(cur);
+    document.getElementById('user-balance').textContent = n;
+    document.getElementById('header-balance').textContent = n + ' ST';
+    if (p < 1) { _balRaf = requestAnimationFrame(step); }
+    else { _balFrom = target; _balRaf = null; }
+  }
+  _balRaf = requestAnimationFrame(step);
 }
 
 function fmtNum(n){ return Number(n).toLocaleString(); }
@@ -242,7 +269,11 @@ async function dealBlackjack(){
   document.getElementById('bj-result').textContent='';
 
   if(score(player)===21){await settleBJ('blackjack');return;}
-  document.getElementById('bj-actions').innerHTML=`<button class="bj-btn hit-btn" onclick="bjHit()">HIT</button><button class="bj-btn stand-btn" onclick="bjStand()">STAND</button>`;
+  const acts=document.getElementById('bj-actions');
+  acts.innerHTML='';
+  const hitB=document.createElement('button');hitB.className='bj-btn hit-btn';hitB.textContent='HIT';hitB.onclick=bjHit;
+  const stB=document.createElement('button');stB.className='bj-btn stand-btn';stB.textContent='STAND';stB.onclick=bjStand;
+  acts.appendChild(hitB);acts.appendChild(stB);
 }
 function bjHit(){
   if(!bjState||bjState.over)return;
@@ -287,7 +318,10 @@ async function settleBJ(result){
   renderHand('dealer-hand',bjState.dealer);
   document.getElementById('dealer-score').textContent=score(bjState.dealer);
   const res=document.getElementById('bj-result');res.textContent=msg;res.style.color=col;
-  document.getElementById('bj-actions').innerHTML=`<button class="bj-btn deal-btn" onclick="dealBlackjack()">DEAL AGAIN</button>`;
+  const actsEl=document.getElementById('bj-actions');
+  actsEl.innerHTML='';
+  const dealB=document.createElement('button');dealB.className='bj-btn deal-btn';dealB.textContent='DEAL AGAIN';dealB.onclick=dealBlackjack;
+  actsEl.appendChild(dealB);
 }
 
 // ── ROULETTE (smooth RAF) ─────────────────────────────────
@@ -334,21 +368,30 @@ async function spinRoulette(){
     const data=await apiPost('/api/roulette',{bet:bets.roulette,betType:rouletteBet});
     const targetIdx=R_NUMS.indexOf(data.number);
     const arcSize=Math.PI*2/R_NUMS.length;
-    // Calculate exact angle so target lands at pointer (top center)
-    const targetAngle=-(targetIdx*arcSize);
-    const totalRot=Math.PI*2*7+targetAngle-rouletteAngle; // 7 full spins
-    const start=rouletteAngle,dur=5000,startTime=performance.now();
-    function easeOut(t){return 1-Math.pow(1-t,5);} // quintic for very smooth decel
+    // Normalise current angle to 0..2π so arithmetic is always clean
+    const normCurrent = ((rouletteAngle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
+    // The angle at which this number sits at the top pointer
+    const targetAngle = ((-(targetIdx * arcSize)) % (Math.PI*2) + Math.PI*2) % (Math.PI*2);
+    // Always spin forward: 7 full rotations + the extra needed to land on target
+    let extra = targetAngle - normCurrent;
+    if(extra < 0) extra += Math.PI*2; // ensure forward direction
+    const totalRot = Math.PI*2*7 + extra;
+    const startAngle = normCurrent;
+    const dur=5000, startTime=performance.now();
+    function easeOut(t){return 1-Math.pow(1-t,5);}
     function frame(now){
       const p=Math.min((now-startTime)/dur,1),e=easeOut(p);
-      drawRouletteWheel(start+totalRot*e);
+      drawRouletteWheel(startAngle + totalRot*e);
       if(p<1){requestAnimationFrame(frame);}
       else{
+        // Lock to exact target so next spin starts clean
+        rouletteAngle = targetAngle;
+        drawRouletteWheel(targetAngle);
         updateUserUI(data.newBalance);
         const res=document.getElementById('roulette-result');
         const col=R_COLORS[data.number];
-        const css=col==='red'?'var(--red)':col==='green'?'var(--green)':'var(--text)';
-        res.innerHTML=`<span style="color:${css}">⬤ ${data.number} ${col.toUpperCase()}</span>&nbsp;&nbsp;${data.won?`<span style="color:var(--gold)">+${fmtNum(data.payout)} ST</span>`:'<span style="color:var(--muted)">Lost</span>'}`;
+        const css=col==='red'?'var(--red)':col==='green'?'var(--green)':'var(--text2)';
+        res.innerHTML=`<span style="color:${css}">⬤ ${data.number} ${col.toUpperCase()}</span>&nbsp;&nbsp;${data.won?`<span style="color:var(--gold)">+${fmtNum(data.payout)} ST</span>`:'<span style="color:var(--red)">−${fmtNum(bets.roulette)} ST</span>'}`;
         btn.disabled=false;
       }
     }
@@ -1130,7 +1173,8 @@ function cbMakePlayerCard(p, i, status) {
 
 function cbRenderRoom(battle) {
   const numC = battle.numCases||1;
-  document.getElementById('cb-room-title').textContent = `${battle.caseId?.charAt(0).toUpperCase()+battle.caseId?.slice(1)} Battle · ${battle.mode}${numC>1?' · '+numC+' cases':''}`;
+  const reverseLabel = battle.mode==='reverse' ? ' · 🔻 Lowest Wins' : '';
+  document.getElementById('cb-room-title').textContent = `${battle.caseId?.charAt(0).toUpperCase()+battle.caseId?.slice(1)} Battle · ${battle.mode}${numC>1?' · '+numC+' cases':''}${reverseLabel}`;
   const row = document.getElementById('cb-players-row');
   row.innerHTML = '';
 
@@ -1214,9 +1258,10 @@ function cbOnRoundStart(data) {
         existingDrop.classList.add('cb-history-item');
         histBox.appendChild(existingDrop);
       }
-      // Remove any lingering reels
+      // Remove any lingering reels and jackpot glow from previous round
       card.querySelectorAll('.cb-reel-wrap').forEach(el=>el.remove());
-      card.classList.remove('done'); card.classList.add('spinning');
+      card.classList.remove('done','cb-jackpot-winner','cb-jackpot-incoming','winner');
+      card.classList.add('spinning');
       const st=card.querySelector('.cb-player-status'); if(st)st.textContent='Opening...';
     });
     sfx('case_spin');
@@ -1362,7 +1407,8 @@ function cbOnDone(data) {
     resultHTML = `<div class="cb-win-title">🏆 Team ${data.winner.team.join(' & ')} wins!</div><div class="cb-win-sub">Total: ${fmtNum(data.winner.total)} ST</div>`;
   } else {
     const isMe = data.winner?.username === user?.username;
-    resultHTML = `<div class="cb-win-title">${data.winner?.isBot?'🤖':'🏆'} ${data.winner?.username} wins!</div><div class="cb-win-sub">${isMe?`You won ${fmtNum(data.winner.value)} ST! 🎉`:'Better luck next time!'}</div>`;
+    const reverseTag = data.winner?.reverse ? '<span class="cb-reverse-tag">🔻 REVERSE — lowest wins</span>' : '';
+    resultHTML = `<div class="cb-win-title">${data.winner?.isBot?'🤖':'🏆'} ${data.winner?.username} wins!</div>${reverseTag}<div class="cb-win-sub">${isMe?`You won ${fmtNum(data.winner.value)} ST! 🎉`:'Better luck next time!'}</div>`;
   }
   // Rematch button — only show if we have the config stored
   resultHTML += `<div class="cb-rematch-row"><button class="cb-rematch-btn" onclick="cbRematch()">🔄 Rematch</button><button class="cb-back-btn" onclick="cbLeaveRoom()" style="margin-top:0">← Lobby</button></div>`;
