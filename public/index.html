@@ -21,13 +21,13 @@
   <div class="landing-hero">
     <div class="landing-badge">🎲 Free to play &nbsp;·&nbsp; Discord linked</div>
     <h1 class="landing-title"><span class="ls">S</span><span class="lc">ANTEN</span><br><span class="landing-sub">CASINO</span></h1>
-    <p class="landing-desc">Your Discord server's premier gambling experience. Slots, Blackjack, Roulette, Crash, Mines, Plinko and more.</p>
+    <p class="landing-desc">Your Discord server's premier gambling experience. Slots, Blackjack, Roulette, Mines, Plinko and more.</p>
     <button class="dbtn lg" onclick="loginWithDiscord()"><svg width="22" height="16" viewBox="0 0 22 16" fill="none"><path d="M18.59 1.34A18.1 18.1 0 0014.2.02a.07.07 0 00-.07.03c-.18.32-.38.74-.52 1.07a16.72 16.72 0 00-5.02 0C8.44.77 8.23.35 8.05.05A.07.07 0 008 .02 18.06 18.06 0 003.6 1.34a.06.06 0 00-.03.03C.52 5.77-.31 10.1.1 14.36c0 .02.01.04.03.05a18.18 18.18 0 005.49 2.77.07.07 0 00.08-.03c.42-.58.8-1.19 1.12-1.83a.07.07 0 00-.04-.1 11.97 11.97 0 01-1.71-.82.07.07 0 010-.11c.11-.09.23-.17.34-.26a.07.07 0 01.07-.01c3.59 1.64 7.48 1.64 11.03 0a.07.07 0 01.07.01c.11.09.23.17.34.26a.07.07 0 010 .11c-.54.32-1.12.59-1.71.82a.07.07 0 00-.04.1c.33.64.71 1.25 1.12 1.83a.07.07 0 00.08.03 18.13 18.13 0 005.5-2.77.07.07 0 00.03-.05c.46-4.84-.77-9.04-3.26-12.99a.05.05 0 00-.03-.03zM7.35 11.86c-1.08 0-1.97-.99-1.97-2.21s.87-2.21 1.97-2.21c1.11 0 1.99 1 1.97 2.21 0 1.22-.87 2.21-1.97 2.21zm7.29 0c-1.08 0-1.97-.99-1.97-2.21s.87-2.21 1.97-2.21c1.11 0 1.99 1 1.97 2.21 0 1.22-.86 2.21-1.97 2.21z" fill="white"/></svg>Play with Discord — it's free</button>
     <p class="ln">New players receive <strong>1,000 Santen Coins</strong> free</p>
   </div>
   <div class="game-cards-preview">
     <div class="gcp">🎰<span>Slots</span></div><div class="gcp">🃏<span>Blackjack</span></div>
-    <div class="gcp">🎡<span>Roulette</span></div><div class="gcp">📈<span>Crash</span></div>
+    <div class="gcp">🎡<span>Roulette</span></div>
     <div class="gcp">💣<span>Mines</span></div><div class="gcp">🔵<span>Plinko</span></div>
     <div class="gcp">🎴<span>Hi-Lo</span></div><div class="gcp">📦<span>Cases</span></div>
   </div>
@@ -42,7 +42,6 @@
       <a class="ni active" data-page="slots"       onclick="showPage('slots')">      <i>🎰</i>Slots</a>
       <a class="ni"        data-page="blackjack"   onclick="showPage('blackjack')">  <i>🃏</i>Blackjack</a>
       <a class="ni"        data-page="roulette"    onclick="showPage('roulette')">   <i>🎡</i>Roulette</a>
-      <a class="ni ni-disabled ni-dead" data-page="crash" title="Temporarily unavailable"><i>📈</i>Crash <span class="ni-soon">OFF</span></a>
       <a class="ni"        data-page="mines"       onclick="showPage('mines')">      <i>💣</i>Mines</a>
       <a class="ni"        data-page="plinko"      onclick="showPage('plinko')">     <i>🔵</i>Plinko</a>
       <a class="ni"        data-page="coinflip"    onclick="showPage('coinflip')">   <i>🪙</i>Coinflip</a>
@@ -139,27 +138,6 @@
           <div class="bet-row">
             <div class="bet-ctrl"><button onclick="adjustBet('roulette',-50)">−</button><input class="bet-input" id="roulette-bet-input" type="number" value="50" min="10" onchange="setBetDirect('roulette',this.value)"/><span class="stlabel">ST</span><button onclick="adjustBet('roulette',50)">+</button></div>
             <button class="sbtn" id="roulette-btn" onclick="spinRoulette()">SPIN</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- CRASH -->
-    <div id="page-crash" class="page">
-      <div class="gc">
-        <div class="crash-area">
-          <div class="crash-graph-wrap">
-            <canvas id="crash-canvas" width="600" height="320"></canvas>
-            <div class="crash-mult-overlay" id="crash-mult-overlay">
-              <div class="crash-mult" id="crash-multiplier">1.00×</div>
-              <div class="crash-status" id="crash-status">Place your bet</div>
-            </div>
-          </div>
-          <div id="crash-result" class="crash-result"></div>
-          <div class="bet-row">
-            <div class="bet-ctrl"><button onclick="adjustBet('crash',-50)">−</button><input class="bet-input" id="crash-bet-input" type="number" value="50" min="10" onchange="setBetDirect('crash',this.value)"/><span class="stlabel">ST</span><button onclick="adjustBet('crash',50)">+</button></div>
-            <button class="sbtn" id="crash-btn" onclick="startCrash()">BET & LAUNCH</button>
-            <button class="cashout-btn hidden" id="cashout-btn" onclick="cashOut()">🚀 CASH OUT</button>
           </div>
         </div>
       </div>
