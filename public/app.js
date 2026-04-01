@@ -99,9 +99,14 @@ function showPage(page) {
   if(page==='leaderboard') loadLeaderboard();
   if(page==='casebattle'){cbInit();cbStartAutoRefresh();}else{cbStopAutoRefresh();}
   if(page==='crash'){
-    const btn=document.getElementById('crash-btn');
-    if(btn){ btn.disabled=true; btn.textContent='UNAVAILABLE'; btn.classList.add('crash-disabled-btn'); }
-    document.getElementById('crash-result').innerHTML='<span class="crash-unavail-msg">🚧 Crash is temporarily disabled</span>';
+    // Crash is disabled — silently redirect to slots instead
+    document.getElementById('page-crash').classList.remove('active');
+    document.getElementById('page-slots').classList.add('active');
+    document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
+    const slotsNav=document.querySelector('.ni[data-page="slots"]');
+    if(slotsNav) slotsNav.classList.add('active');
+    document.getElementById('page-title').textContent='Slots';
+    return;
   }
   if(page==='daily') loadDailyStatus();
   if(page==='roulette') setTimeout(()=>drawRouletteWheel(rouletteAngle),50);
@@ -1478,6 +1483,73 @@ function initTheme() {
 initTheme();
 init();
 initLandingParticles();
+initDevtoolsGuard();
+
+function initDevtoolsGuard() {
+  // Console lockdown — replace with no-ops so nothing leaks
+  const noop = () => {};
+  try {
+    window.console.log   = noop;
+    window.console.debug = noop;
+    window.console.info  = noop;
+    window.console.table = noop;
+    window.console.dir   = noop;
+    window.console.error = noop;
+    // warn shows one-time message then becomes noop too
+    window.console.warn  = () => {
+      window.console.warn = noop;
+    };
+  } catch(e) {}
+
+  // Devtools size detector — when devtools docks, the inner window shrinks
+  let _dtOpen = false;
+  function checkDevtools() {
+    const widthDiff  = window.outerWidth  - window.innerWidth;
+    const heightDiff = window.outerHeight - window.innerHeight;
+    const open = widthDiff > 160 || heightDiff > 160;
+    if (open !== _dtOpen) {
+      _dtOpen = open;
+      showDevtoolsOverlay(open);
+    }
+  }
+  setInterval(checkDevtools, 1000);
+
+  // Block right-click context menu
+  document.addEventListener('contextmenu', e => e.preventDefault());
+
+  // Block common devtools keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    if (
+      e.key === 'F12' ||
+      (e.ctrlKey && e.shiftKey && ['I','J','C','K'].includes(e.key.toUpperCase())) ||
+      (e.metaKey && e.altKey  && ['I','J','C'].includes(e.key.toUpperCase())) ||
+      (e.ctrlKey && e.key === 'U')
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  });
+}
+
+function showDevtoolsOverlay(show) {
+  let ov = document.getElementById('devtools-overlay');
+  if (show) {
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.id = 'devtools-overlay';
+      ov.innerHTML = `
+        <div class="dt-box">
+          <div class="dt-icon">🔒</div>
+          <div class="dt-title">Developer Tools Detected</div>
+          <div class="dt-msg">Close DevTools to continue playing.<br>All game logic runs server-side — there is nothing to modify here.</div>
+        </div>`;
+      document.body.appendChild(ov);
+    }
+    ov.style.display = 'flex';
+  } else {
+    if (ov) ov.style.display = 'none';
+  }
+}
 
 function initLandingParticles() {
   const canvas = document.getElementById('landing-particles');
