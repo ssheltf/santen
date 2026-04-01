@@ -605,3 +605,25 @@ html,body { height:100%; background:var(--bg); color:var(--text); font-family:va
 .cb-reverse-tag { display:block; font-size:11px; font-weight:700; color:var(--red); letter-spacing:1px; margin:4px 0 2px; }
 .cb-mode-reverse { border-color:rgba(240,82,82,0.4) !important; color:var(--red) !important; }
 .cb-mode-reverse.active { background:rgba(240,82,82,0.12) !important; border-color:var(--red) !important; }
+
+/* ── Crash nav — completely dead, no pointer ──────────────── */
+.ni-dead { pointer-events:none !important; cursor:default !important; }
+
+/* ── DevTools overlay ─────────────────────────────────────── */
+#devtools-overlay {
+  position:fixed; inset:0; z-index:99999;
+  background:rgba(6,8,16,0.97);
+  backdrop-filter:blur(20px);
+  display:none; align-items:center; justify-content:center;
+}
+.dt-box {
+  text-align:center; padding:48px 40px;
+  background:rgba(255,255,255,0.04);
+  border:1px solid rgba(240,82,82,0.3);
+  border-radius:20px;
+  box-shadow:0 0 60px rgba(240,82,82,0.1);
+  max-width:400px;
+}
+.dt-icon  { font-size:48px; margin-bottom:16px; }
+.dt-title { font-size:20px; font-weight:700; color:var(--red); margin-bottom:12px; }
+.dt-msg   { font-size:14px; color:var(--text2); line-height:1.7; }
