@@ -611,6 +611,18 @@ const CASES = {
       {name:'THE BOKI',      value:2000000,weight:2},
     ]
   },
+  bigv: {
+    name:'Big V Case', price:1000000, color:'#00e5ff', emoji:'💠',
+    items:[
+      {name:'Entry Scraps',   value:150000,  weight:28},
+      {name:'Decent Haul',    value:500000,  weight:24},
+      {name:'Good Score',     value:900000,  weight:18},
+      {name:'Big Score',      value:1600000, weight:13},
+      {name:'Huge Score',     value:3000000, weight:9},
+      {name:'The V',          value:6000000, weight:5},
+      {name:'FULL V',         value:20000000,weight:3},
+    ]
+  },
 };
 
 function spinCase(caseId) {
@@ -658,7 +670,7 @@ app.post('/api/battles/create', requireAuth, (req,res)=>{
   const {caseId, mode='1v1', numCases=1} = req.body;
   if(!CASES[caseId]) return res.status(400).json({error:'Invalid case'});
   const safeNumCases = Math.max(1, Math.min(5, parseInt(numCases)||1));
-  const modeMap = {'1v1':2,'2v2':4,'3v3':6,'1v1v1':3,'free4all':4};
+  const modeMap = {'1v1':2,'2v2':4,'3v3':6,'1v1v1':3,'free4all':4,'reverse':2};
   const slots = modeMap[mode] || 2;
   const costPerPlayer = CASES[caseId].price * safeNumCases;
   const fresh = db.getUser(req.user.discord_id);
@@ -772,6 +784,7 @@ async function startBattle(battle){
 
   // Find winner(s)
   let winner=null;
+  const isReverse = battle.mode==='reverse';
   if(battle.mode==='2v2'||battle.mode==='3v3'){
     const teamSize=battle.mode==='2v2'?2:3;
     const team1=battle.players.slice(0,teamSize), team2=battle.players.slice(teamSize);
@@ -782,8 +795,10 @@ async function startBattle(battle){
     const totalPot=battle.players.reduce((a,p)=>a+(p.result?.totalValue||0),0);
     winTeam.forEach(p=>{ if(!p.isBot){ db.addBalance(p.discord_id,Math.floor(totalPot/teamSize)); } });
   } else {
-    const best=battle.players.reduce((a,b)=>(b.result?.totalValue||0)>(a.result?.totalValue||0)?b:a);
-    winner={username:best.username,value:best.result?.totalValue||0,isBot:best.isBot};
+    const best = isReverse
+      ? battle.players.reduce((a,b)=>(b.result?.totalValue||0)<(a.result?.totalValue||0)?b:a)
+      : battle.players.reduce((a,b)=>(b.result?.totalValue||0)>(a.result?.totalValue||0)?b:a);
+    winner={username:best.username,value:best.result?.totalValue||0,isBot:best.isBot,reverse:isReverse};
     const totalPot=battle.players.reduce((a,p)=>a+(p.result?.totalValue||0),0);
     if(!best.isBot) db.addBalance(best.discord_id,totalPot);
     if(!best.isBot){
