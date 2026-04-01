@@ -4,6 +4,7 @@
 
 // ── State ────────────────────────────────────────────────
 let user = null;
+let _gameToken = null; // server-issued token, validated on every game request
 let bets = { slots:50, bj:50, roulette:50, cf:50, plinko:50, hilo:50, mines:50 };
 let bjState = null, rouletteBet = null, coinChoice = null;
 let minesState = null, mineCount = 5;
@@ -19,7 +20,15 @@ function logout(){ fetch('/auth/logout',{method:'POST'}).then(()=>window.locatio
 async function init() {
   try {
     const res = await fetch('/api/me');
-    if (res.ok) { user = await res.json(); showApp(); }
+    if (res.ok) {
+      user = await res.json();
+      if (user._gt) {
+        // Store token in a closure variable — not accessible from console
+        _gameToken = user._gt;
+        delete user._gt; // remove from user object so it's not inspectable
+      }
+      showApp();
+    }
     else showLanding();
   } catch(e) { showLanding(); }
 }
@@ -121,8 +130,20 @@ function updateHiloPotential() {
 }
 
 async function apiPost(path, body) {
-  const res = await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!res.ok){const e=await res.json();throw new Error(e.error||'Error');}
+  const headers = {'Content-Type':'application/json'};
+  if (_gameToken) headers['x-game-token'] = _gameToken;
+  const res = await fetch(path, {method:'POST', headers, body:JSON.stringify(body)});
+  if (!res.ok) {
+    const e = await res.json();
+    // If token expired (page was open too long), silently refresh it
+    if (res.status === 403) {
+      try {
+        const fresh = await fetch('/api/me').then(r=>r.json());
+        if (fresh._gt) { _gameToken = fresh._gt; delete fresh._gt; }
+      } catch(e2) {}
+    }
+    throw new Error(e.error || 'Error');
+  }
   return res.json();
 }
 
@@ -384,7 +405,11 @@ async function spinRoulette(){
         const res=document.getElementById('roulette-result');
         const col=R_COLORS[data.number];
         const css=col==='red'?'var(--red)':col==='green'?'var(--green)':'var(--text2)';
-        res.innerHTML=`<span style="color:${css}">⬤ ${data.number} ${col.toUpperCase()}</span>&nbsp;&nbsp;${data.won?`<span style="color:var(--gold)">+${fmtNum(data.payout)} ST</span>`:'<span style="color:var(--red)">−${fmtNum(bets.roulette)} ST</span>'}`;
+        const numSpan = `<span style="color:${css}">⬤ ${data.number} ${col.toUpperCase()}</span>`;
+        const amtSpan = data.won
+          ? `<span style="color:var(--gold)">+${fmtNum(data.payout)} ST</span>`
+          : `<span style="color:var(--red)">−${fmtNum(bets.roulette)} ST</span>`;
+        res.innerHTML = numSpan + '&nbsp;&nbsp;' + amtSpan;
         btn.disabled=false;
       }
     }
