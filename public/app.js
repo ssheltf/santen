@@ -40,13 +40,45 @@ function showApp() {
   initChat();
 }
 
+let _balAnimFrame = null;
+let _balDisplayed = null;
+
+function animateBalance(from, to) {
+  if (_balAnimFrame) cancelAnimationFrame(_balAnimFrame);
+  if (from === to || from === null) {
+    const n = fmtNum(to);
+    document.getElementById('user-balance').textContent = n;
+    document.getElementById('header-balance').textContent = n + ' ST';
+    _balDisplayed = to;
+    return;
+  }
+  const diff = to - from;
+  const duration = Math.min(900, Math.max(300, Math.abs(diff) / 10));
+  const start = performance.now();
+  function step(now) {
+    const p = Math.min(1, (now - start) / duration);
+    // ease out cubic
+    const e = 1 - Math.pow(1 - p, 3);
+    const cur = Math.round(from + diff * e);
+    const n = fmtNum(cur);
+    document.getElementById('user-balance').textContent = n;
+    document.getElementById('header-balance').textContent = n + ' ST';
+    if (p < 1) {
+      _balAnimFrame = requestAnimationFrame(step);
+    } else {
+      _balDisplayed = to;
+      _balAnimFrame = null;
+    }
+  }
+  _balAnimFrame = requestAnimationFrame(step);
+}
+
 function updateUserUI(bal) {
   if (!user) return;
+  const prev = _balDisplayed !== null ? _balDisplayed : (bal !== undefined ? bal : user.balance);
   if (bal !== undefined) user.balance = bal;
-  const n = fmtNum(user.balance);
   document.getElementById('user-name').textContent = user.username;
-  document.getElementById('user-balance').textContent = n;
-  document.getElementById('header-balance').textContent = n + ' ST';
+  animateBalance(prev, user.balance);
   const src = user.avatar
     ? `https://cdn.discordapp.com/avatars/${user.discord_id}/${user.avatar}.png?size=64`
     : `https://cdn.discordapp.com/embed/avatars/0.png`;
@@ -71,6 +103,11 @@ function showPage(page) {
   document.getElementById('page-title').textContent = titles[page]||page;
   if(page==='leaderboard') loadLeaderboard();
   if(page==='casebattle'){cbInit();cbStartAutoRefresh();}else{cbStopAutoRefresh();}
+  if(page==='crash'){
+    const btn=document.getElementById('crash-btn');
+    if(btn){ btn.disabled=true; btn.textContent='UNAVAILABLE'; btn.classList.add('crash-disabled-btn'); }
+    document.getElementById('crash-result').innerHTML='<span class="crash-unavail-msg">🚧 Crash is temporarily disabled</span>';
+  }
   if(page==='daily') loadDailyStatus();
   if(page==='roulette') setTimeout(()=>drawRouletteWheel(rouletteAngle),50);
   if(page==='plinko') setTimeout(initPlinko,60);
@@ -455,50 +492,8 @@ function drawCrashFrame(){
   crashCtx.strokeStyle='rgba(201,168,76,0.35)';crashCtx.lineWidth=2;crashCtx.stroke();
 }
 async function startCrash(){
-  if(!user)return;
-  const btn=document.getElementById('crash-btn'),cashBtn=document.getElementById('cashout-btn');
-  btn.disabled=true;document.getElementById('crash-result').textContent='';
-  try{
-    const data=await apiPost('/api/crash/start',{bet:bets.crash});
-    user.balance=data.newBalance;updateUserUI();
-    crashMult=1.0;crashActive=true;crashCashedOut=false;
-    crashPoints=[1];crashStartTime=performance.now();
-    const mult=document.getElementById('crash-multiplier');
-    const status=document.getElementById('crash-status');
-    mult.classList.remove('crashed');status.textContent='Fly! 🚀';
-    btn.classList.add('hidden');cashBtn.classList.remove('hidden');
-    function tick(now){
-      if(!crashActive)return;
-      const elapsed=(now-crashStartTime)/1000;
-      // Exponential growth: m = e^(0.1*t) — same formula server uses
-      crashMult=Math.max(1,parseFloat(Math.pow(Math.E,0.1*elapsed).toFixed(2)));
-      crashPoints.push(crashMult);
-      mult.textContent=crashMult.toFixed(2)+'×';
-      drawCrashFrame();
-      // Client NEVER knows the crash point — just keeps ticking.
-      // The server will tell us if we crashed when we try to cash out.
-      // We ping the server every ~500ms to check if it has crashed.
-      crashRaf=requestAnimationFrame(tick);
-    }
-    crashRaf=requestAnimationFrame(tick);
-    // Poll server every 500ms to check if crashed — client never stores crash point
-    const crashPoll=setInterval(async()=>{
-      if(!crashActive){clearInterval(crashPoll);return;}
-      try{
-        const alive=await fetch('/api/crash/alive');
-        const data=await alive.json();
-        if(data.crashed){
-          clearInterval(crashPoll);
-          crashActive=false;
-          if(crashRaf)cancelAnimationFrame(crashRaf);
-          mult.textContent=data.at.toFixed(2)+'×';mult.classList.add('crashed');
-          sfx('crash_boom'); status.textContent='Crashed! 💥';
-          cashBtn.classList.add('hidden');btn.classList.remove('hidden');btn.disabled=false;
-          document.getElementById('crash-result').innerHTML=`<span style="color:var(--red)">Crashed at ${data.at.toFixed(2)}× — Lost ${fmtNum(bets.crash)} ST</span>`;
-        }
-      }catch(e){clearInterval(crashPoll);}
-    },500);
-  }catch(e){showErr('crash-result',e.message);btn.disabled=false;}
+  const btn=document.getElementById('crash-btn');
+  if(btn){ btn.classList.add('crash-disabled-shake'); setTimeout(()=>btn.classList.remove('crash-disabled-shake'),500); }
 }
 async function cashOut(){
   if(!crashActive||crashCashedOut)return;
@@ -1260,6 +1255,48 @@ function cbOnRoundStart(data) {
   }
 }
 
+function launchConfetti(originEl) {
+  const colors = ['#e8b84b','#ffd97a','#34d17a','#4f9cf9','#f05252','#8b6cf7','#ff4ecd','#fff'];
+  const rect = originEl ? originEl.getBoundingClientRect() : {left:window.innerWidth/2, top:window.innerHeight/2, width:0, height:0};
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const count = 80;
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('div');
+    el.className = 'confetti-particle';
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const size = 6 + Math.random() * 8;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 180 + Math.random() * 260;
+    const vx = Math.cos(angle) * speed;
+    const vy = Math.sin(angle) * speed - 180; // upward bias
+    const rot = Math.random() * 720 - 360;
+    const isRect = Math.random() > 0.5;
+    el.style.cssText = `
+      position:fixed; z-index:9998; pointer-events:none;
+      left:${cx}px; top:${cy}px;
+      width:${isRect ? size*1.6 : size}px;
+      height:${size}px;
+      background:${color};
+      border-radius:${isRect ? '2px' : '50%'};
+      opacity:1;
+    `;
+    document.body.appendChild(el);
+    const dur = 900 + Math.random() * 600;
+    const start = performance.now();
+    function animate(now) {
+      const t = (now - start) / dur;
+      if (t >= 1) { el.remove(); return; }
+      const ease = 1 - t * t;
+      const gravity = 300 * t * t;
+      el.style.transform = `translate(${vx*t}px, ${vy*t + gravity}px) rotate(${rot*t}deg)`;
+      el.style.opacity = Math.max(0, 1 - t * 1.4);
+      requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
+  }
+}
+
 function cbOnSpin(data) {
   sfx('case_spin');
   const card = document.getElementById(`cb-pcard-${data.playerIdx}`);
@@ -1332,6 +1369,7 @@ function cbOnSpin(data) {
       + (showTotal && data.round > 0 ? `<div class="cb-drop-total">Total: ${fmtNum(data.totalValue)} ST</div>` : '');
     card.appendChild(drop);
     sfx(isJackpot ? 'jackpot' : data.result.value >= 1000 ? 'win_small' : 'click');
+    if (isJackpot) launchConfetti(card);
   }, revealDelay);
 }
 
@@ -1425,6 +1463,64 @@ function initTheme() {
 // ── Boot ──────────────────────────────────────────────────
 initTheme();
 init();
+initLandingParticles();
+
+function initLandingParticles() {
+  const canvas = document.getElementById('landing-particles');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let W, H, particles = [];
+
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const SYMBOLS = ['♠','♥','♦','♣','7','★'];
+  const COLORS  = ['rgba(232,184,75,','rgba(255,217,122,','rgba(255,255,255,','rgba(139,108,247,'];
+
+  for (let i = 0; i < 55; i++) {
+    particles.push({
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * window.innerHeight,
+      sym: SYMBOLS[Math.floor(Math.random()*SYMBOLS.length)],
+      col: COLORS[Math.floor(Math.random()*COLORS.length)],
+      size: 10 + Math.random() * 16,
+      speed: 0.15 + Math.random() * 0.3,
+      drift: (Math.random() - 0.5) * 0.25,
+      rot: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 0.008,
+      alpha: 0.04 + Math.random() * 0.13,
+    });
+  }
+
+  function frame() {
+    const landing = document.getElementById('landing-screen');
+    if (!landing || landing.classList.contains('hidden')) { requestAnimationFrame(frame); return; }
+    ctx.clearRect(0, 0, W, H);
+    for (const p of particles) {
+      p.y -= p.speed;
+      p.x += p.drift;
+      p.rot += p.rotSpeed;
+      if (p.y < -40) { p.y = H + 40; p.x = Math.random() * W; }
+      if (p.x < -40) p.x = W + 40;
+      if (p.x > W + 40) p.x = -40;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.font = `${p.size}px serif`;
+      ctx.fillStyle = p.col + p.alpha + ')';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(p.sym, 0, 0);
+      ctx.restore();
+    }
+    requestAnimationFrame(frame);
+  }
+  frame();
+}
 
 // Expose only what HTML onclick handlers need — nothing else
   window.loginWithDiscord = loginWithDiscord;
