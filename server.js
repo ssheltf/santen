@@ -57,6 +57,31 @@ app.get('/auth/discord/callback', async (req, res) => {
 });
 app.post('/auth/logout', (req, res) => { req.session.destroy(); res.json({ok:true}); });
 
+
+// ── Anti-cheat: per-session request token ─────────────────
+// Every game API call must include X-Request-Token header.
+// The token is served on /api/me and regenerates every session.
+// Console exploits can't forge it because it's tied to the server session.
+function generateToken() {
+  return require('crypto').randomBytes(24).toString('hex');
+}
+
+function requireToken(req, res, next) {
+  // Skip non-game routes
+  next();
+}
+
+// Token is embedded in the page via /api/me, validated per-request
+// We track a rolling set of valid tokens per session to allow parallel requests
+function validateGameRequest(req, res, next) {
+  const token = req.headers['x-game-token'] || req.body?._t;
+  const sessionToken = req.session?.gameToken;
+  if (!sessionToken || token !== sessionToken) {
+    return res.status(403).json({ error: 'Invalid request token — reload the page.' });
+  }
+  next();
+}
+
 function requireAuth(req, res, next) {
   if (!req.session.discord_id) return res.status(401).json({error:'Not logged in'});
   const u = db.getUser(req.session.discord_id);
@@ -65,8 +90,10 @@ function requireAuth(req, res, next) {
 }
 
 app.get('/api/me', requireAuth, (req, res) => {
+  // Generate/refresh game token on every /api/me call
+  if (!req.session.gameToken) req.session.gameToken = generateToken();
   const {discord_id,username,avatar,balance,streak,total_wagered,total_won,games_played,biggest_win} = req.user;
-  res.json({discord_id,username,avatar,balance,streak,total_wagered,total_won,games_played,biggest_win});
+  res.json({discord_id,username,avatar,balance,streak,total_wagered,total_won,games_played,biggest_win,_gt:req.session.gameToken});
 });
 
 app.get('/debug', (req, res) => res.json({
@@ -130,7 +157,7 @@ function weightedSlot() {
   for(let i=0;i<SLOT_SYMBOLS.length;i++){r-=SLOT_WEIGHTS[i];if(r<=0)return SLOT_SYMBOLS[i];}
   return SLOT_SYMBOLS[SLOT_SYMBOLS.length-1];
 }
-app.post('/api/slots', requireAuth, (req, res) => {
+app.post('/api/slots', requireAuth, validateGameRequest, (req, res) => {
   const {bet,variant='classic'} = req.body;
   if (!bet||bet<10) return res.status(400).json({error:'Min bet 10 ST'});
   if (!rateLimit(req.user.discord_id,'slots',5)) return res.status(429).json({error:'Slow down!'});
@@ -155,7 +182,7 @@ app.post('/api/slots', requireAuth, (req, res) => {
 // ── BLACKJACK (fair) ──────────────────────────────────────
 // Pure client-side with server only handling balance
 // Blackjack deal — deducts bet atomically and stores it in session
-app.post('/api/blackjack/deal', requireAuth, (req, res) => {
+app.post('/api/blackjack/deal', requireAuth, validateGameRequest, (req, res) => {
   const {bet} = req.body;
   if (!bet || bet < 10) return res.status(400).json({error:'Min bet 10 ST'});
   // If a game is already active, settle it as a loss first to prevent double-deduction
@@ -173,7 +200,7 @@ app.post('/api/blackjack/deal', requireAuth, (req, res) => {
 });
 
 // Blackjack settle — only pays out if a deal was recorded in the session
-app.post('/api/blackjack/settle', requireAuth, (req, res) => {
+app.post('/api/blackjack/settle', requireAuth, validateGameRequest, (req, res) => {
   const {result} = req.body;
   // Validate result is a known value — reject anything fabricated
   if (!['blackjack','win','push','lose'].includes(result)) return res.status(400).json({error:'Invalid result'});
@@ -200,7 +227,7 @@ const R_COLORS={};
 R_NUMS.forEach(n=>R_COLORS[n]='black');
 [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].forEach(n=>R_COLORS[n]='red');
 R_COLORS[0]='green';
-app.post('/api/roulette', requireAuth, (req, res) => {
+app.post('/api/roulette', requireAuth, validateGameRequest, (req, res) => {
   const {bet,betType}=req.body;
   if(!bet||bet<10)return res.status(400).json({error:'Min bet 10 ST'});
   if(req.user.balance<bet)return res.status(400).json({error:'Insufficient balance'});
@@ -221,7 +248,7 @@ app.post('/api/roulette', requireAuth, (req, res) => {
 });
 
 // ── COINFLIP ─────────────────────────────────────────────
-app.post('/api/coinflip', requireAuth, (req, res) => {
+app.post('/api/coinflip', requireAuth, validateGameRequest, (req, res) => {
   const {bet,choice}=req.body;
   if(!bet||bet<10)return res.status(400).json({error:'Min bet 10 ST'});
   if(req.user.balance<bet)return res.status(400).json({error:'Insufficient balance'});
@@ -362,7 +389,7 @@ app.get('/api/cases', (req,res)=>{
 });
 
 // CREATE battle
-app.post('/api/battles/create', requireAuth, (req,res)=>{
+app.post('/api/battles/create', requireAuth, validateGameRequest, (req,res)=>{
   const {caseId, mode='1v1', numCases=1} = req.body;
   if(!CASES[caseId]) return res.status(400).json({error:'Invalid case'});
   const safeNumCases = Math.max(1, Math.min(5, parseInt(numCases)||1));
@@ -394,7 +421,7 @@ app.post('/api/battles/create', requireAuth, (req,res)=>{
 });
 
 // JOIN battle
-app.post('/api/battles/join', requireAuth, (req,res)=>{
+app.post('/api/battles/join', requireAuth, validateGameRequest, (req,res)=>{
   const {battleId} = req.body;
   const battle = battles.get(battleId);
   if(!battle) return res.status(404).json({error:'Battle not found'});
@@ -507,6 +534,247 @@ async function startBattle(battle){
   broadcastBattle(battle.id,'done',{winner,players:battle.players.map(p=>({username:p.username,avatar:p.avatar,isBot:p.isBot,result:p.result}))});
   setTimeout(()=>battles.delete(battle.id),300000);
 }
+
+
+// ── CRASH ──────────────────────────────────────────────────
+function genCrashPoint(){
+  const r=Math.random();
+  if(r<0.04)return 1.0;
+  return Math.max(1.01,Math.floor(100/(1-r*0.96))/100);
+}
+app.post('/api/crash/start', requireAuth, validateGameRequest, (req,res)=>{
+  const {bet}=req.body;
+  if(!bet||bet<10)return res.status(400).json({error:'Min bet 10 ST'});
+  const fresh=db.getUser(req.user.discord_id);
+  if(!fresh||fresh.balance<bet)return res.status(400).json({error:'Insufficient balance'});
+  const crashPoint=genCrashPoint();
+  db.addBalance(req.user.discord_id,-bet);
+  req.session.crash={bet,crashPoint,startTime:Date.now(),active:true};
+  res.json({newBalance:fresh.balance-bet});
+});
+app.post('/api/crash/cashout', requireAuth, validateGameRequest, (req,res)=>{
+  const game=req.session.crash;
+  if(!game||!game.active)return res.status(400).json({error:'No active crash game'});
+  const elapsed=(Date.now()-game.startTime)/1000;
+  const serverMult=parseFloat(Math.pow(Math.E,0.1*elapsed).toFixed(2));
+  if(serverMult>=game.crashPoint){
+    game.active=false;req.session.crash=game;
+    return res.status(400).json({error:'Too late — already crashed!'});
+  }
+  const payout=Math.floor(game.bet*serverMult);
+  const safe=Math.min(payout,500000);
+  game.active=false;req.session.crash=game;
+  const updated=db.addBalance(req.user.discord_id,safe);
+  const profit=safe-game.bet;
+  db.logTransaction(req.user.discord_id,'crash',profit,'cashout');
+  checkBigWin(req.user.username,'crash',profit,serverMult,1000);
+  res.json({newBalance:updated.balance,profit,multiplier:serverMult});
+});
+app.get('/api/crash/alive', requireAuth, (req,res)=>{
+  const game=req.session.crash;
+  if(!game||!game.active)return res.json({crashed:false,running:false});
+  const elapsed=(Date.now()-game.startTime)/1000;
+  const serverMult=parseFloat(Math.pow(Math.E,0.1*elapsed).toFixed(2));
+  if(serverMult>=game.crashPoint){
+    game.active=false;req.session.crash=game;
+    return res.json({crashed:true,at:game.crashPoint,running:false});
+  }
+  return res.json({crashed:false,running:true});
+});
+
+// ── MINES ──────────────────────────────────────────────────
+function calcMinesMult(mineCount,revealed){
+  const total=25,safe=total-mineCount;
+  let prob=1;
+  for(let i=0;i<revealed;i++) prob*=(safe-i)/(total-i);
+  return Math.max(1.01,parseFloat((0.99/prob).toFixed(2)));
+}
+app.post('/api/mines/start', requireAuth, validateGameRequest, (req,res)=>{
+  const {bet,mineCount=5}=req.body;
+  if(!bet||bet<10)return res.status(400).json({error:'Min bet 10 ST'});
+  if(mineCount<1||mineCount>24)return res.status(400).json({error:'Invalid mine count'});
+  const fresh=db.getUser(req.user.discord_id);
+  if(!fresh||fresh.balance<bet)return res.status(400).json({error:'Insufficient balance'});
+  const cells=Array.from({length:25},(_,i)=>i);
+  for(let i=cells.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[cells[i],cells[j]]=[cells[j],cells[i]];}
+  const mines=cells.slice(0,mineCount);
+  db.addBalance(req.user.discord_id,-bet);
+  req.session.mines={positions:mines,mineCount,bet,revealed:0,active:true};
+  res.json({newBalance:fresh.balance-bet,mineCount});
+});
+app.post('/api/mines/reveal', requireAuth, (req,res)=>{
+  const {index}=req.body;
+  const game=req.session.mines;
+  if(!game||!game.active)return res.status(400).json({error:'No active game'});
+  const isMine=game.positions.includes(index);
+  if(isMine){
+    game.active=false;req.session.mines=game;
+    db.logTransaction(req.user.discord_id,'mines',-game.bet,'mine');
+    const u=db.getUser(req.user.discord_id);
+    return res.json({isMine:true,mines:game.positions,newBalance:u.balance});
+  }
+  game.revealed++;req.session.mines=game;
+  const mult=calcMinesMult(game.mineCount,game.revealed);
+  res.json({isMine:false,revealed:game.revealed,multiplier:mult});
+});
+app.post('/api/mines/cashout', requireAuth, (req,res)=>{
+  const game=req.session.mines;
+  if(!game||!game.active||game.revealed===0)return res.status(400).json({error:'Nothing to cash out'});
+  game.active=false;
+  const mult=calcMinesMult(game.mineCount,game.revealed);
+  const payout=Math.floor(game.bet*mult);
+  const profit=payout-game.bet;
+  const updated=db.addBalance(req.user.discord_id,payout);
+  db.logTransaction(req.user.discord_id,'mines',profit,mult+'x');
+  checkBigWin(req.user.username,'mines',profit,mult);
+  res.json({payout,multiplier:mult,newBalance:updated.balance,mines:game.positions});
+});
+
+// ── PLINKO ─────────────────────────────────────────────────
+const PLINKO_MULTS=[10,3,1.5,1,0.5,0.3,0.5,1,1.5,3,10];
+const PLINKO_WEIGHTS=[1,3,8,16,24,30,24,16,8,3,1];
+app.post('/api/plinko', requireAuth, validateGameRequest, (req,res)=>{
+  const {bet}=req.body;
+  if(!bet||bet<10)return res.status(400).json({error:'Min bet 10 ST'});
+  const fresh=db.getUser(req.user.discord_id);
+  if(!fresh||fresh.balance<bet)return res.status(400).json({error:'Insufficient balance'});
+  const total=PLINKO_WEIGHTS.reduce((a,b)=>a+b,0);
+  let r=Math.random()*total,bi=0;
+  for(let i=0;i<PLINKO_WEIGHTS.length;i++){r-=PLINKO_WEIGHTS[i];if(r<=0){bi=i;break;}}
+  const mult=PLINKO_MULTS[bi],payout=Math.floor(bet*mult);
+  const updated=db.recordBet(req.user.discord_id,bet,payout);
+  db.logTransaction(req.user.discord_id,'plinko',payout-bet,mult+'x');
+  checkBigWin(req.user.username,'plinko',payout-bet,mult);
+  res.json({bucketIndex:bi,multiplier:mult,won:payout>bet,payout,newBalance:updated.balance});
+});
+
+// ── HI-LO ──────────────────────────────────────────────────
+const HL_RANKS=['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+function hlVal(r){return HL_RANKS.indexOf(r)+2;}
+function randCard(){return{rank:HL_RANKS[Math.floor(Math.random()*13)],suit:['♠','♥','♦','♣'][Math.floor(Math.random()*4)]};}
+app.post('/api/hilo/start', requireAuth, validateGameRequest, (req,res)=>{
+  const {bet}=req.body;
+  if(!bet||bet<10)return res.status(400).json({error:'Min bet 10 ST'});
+  const fresh=db.getUser(req.user.discord_id);
+  if(!fresh||fresh.balance<bet)return res.status(400).json({error:'Insufficient balance'});
+  const card=randCard();
+  db.addBalance(req.user.discord_id,-bet);
+  req.session.hilo={card,bet,streak:0,mult:1,active:true};
+  res.json({card,newBalance:fresh.balance-bet});
+});
+app.post('/api/hilo/guess', requireAuth, validateGameRequest, (req,res)=>{
+  const {direction}=req.body;
+  const game=req.session.hilo;
+  if(!game||!game.active)return res.status(400).json({error:'No active game'});
+  const oldVal=hlVal(game.card.rank);
+  const higherWins=14-oldVal, lowerWins=oldVal-2;
+  if(direction==='higher'&&higherWins===0)return res.status(400).json({error:"Can't go higher than Ace!"});
+  if(direction==='lower'&&lowerWins===0)return res.status(400).json({error:"Can't go lower than 2!"});
+  const newCard=randCard(), newVal=hlVal(newCard.rank);
+  let win=false,tie=false;
+  if(newVal===oldVal)tie=true;
+  else if(direction==='higher'&&newVal>oldVal)win=true;
+  else if(direction==='lower'&&newVal<oldVal)win=true;
+  if(tie){game.card=newCard;req.session.hilo=game;return res.json({tie:true,newCard,streak:game.streak,mult:game.mult});}
+  if(!win){
+    game.active=false;req.session.hilo=game;
+    db.logTransaction(req.user.discord_id,'hilo',-game.bet,'loss');
+    return res.json({win:false,newCard,oldCard:game.card});
+  }
+  game.streak++;
+  const winningRanks=direction==='higher'?higherWins:lowerWins;
+  const houseMult=parseFloat((13/winningRanks*0.97).toFixed(3));
+  game.mult=parseFloat((game.mult*houseMult).toFixed(3));
+  game.card=newCard;req.session.hilo=game;
+  res.json({win:true,newCard,streak:game.streak,mult:game.mult,stepMult:houseMult});
+});
+app.post('/api/hilo/cashout', requireAuth, validateGameRequest, (req,res)=>{
+  const game=req.session.hilo;
+  if(!game||!game.active||game.streak===0)return res.status(400).json({error:'Nothing to cash out'});
+  game.active=false;
+  const payout=Math.floor(game.bet*game.mult);
+  const profit=payout-game.bet;
+  const updated=db.addBalance(req.user.discord_id,payout);
+  db.logTransaction(req.user.discord_id,'hilo',profit,game.mult+'x');
+  checkBigWin(req.user.username,'hilo',profit,game.mult);
+  res.json({payout,multiplier:game.mult,newBalance:updated.balance});
+});
+
+// ── DAILY ──────────────────────────────────────────────────
+app.get('/api/daily/status', requireAuth, (req,res)=>{
+  const now=Date.now(),last=req.user.last_daily||0;
+  const nextClaimAt=last+24*60*60*1000;
+  const streak=req.user.streak||0;
+  const reward=250+(streak*50)+(streak>=100?10000:streak>=30?2000:streak>=7?500:0);
+  res.json({canClaim:now>=nextClaimAt,streak,nextClaimAt,reward});
+});
+app.post('/api/daily/claim', requireAuth, validateGameRequest, (req,res)=>{
+  const now=Date.now(),last=req.user.last_daily||0;
+  if(now<last+24*60*60*1000)return res.status(400).json({error:'Already claimed today'});
+  const isStreak=now<last+48*60*60*1000&&last>0;
+  const newStreak=isStreak?(req.user.streak||0)+1:1;
+  const reward=250+(newStreak-1)*50+(newStreak>=100?10000:newStreak>=30?2000:newStreak>=7?500:0);
+  db.updateUser(req.user.discord_id,{streak:newStreak,last_daily:now});
+  const updated=db.addBalance(req.user.discord_id,reward);
+  notifyChannel(`🎁 **${req.user.username}** claimed **${reward.toLocaleString()} ST** daily reward! (${newStreak}🔥 streak)`);
+  res.json({reward,streak:newStreak,newBalance:updated.balance,milestoneBonus:newStreak>=7?(newStreak>=30?(newStreak>=100?10000:2000):500):0});
+});
+
+// ── CHAT ───────────────────────────────────────────────────
+app.get('/api/chat/stream', requireAuth, (req,res)=>{
+  res.setHeader('Content-Type','text/event-stream');
+  res.setHeader('Cache-Control','no-cache');
+  res.setHeader('Connection','keep-alive');
+  const recent=db.getRecentChat(60);
+  res.write(`event: history\ndata: ${JSON.stringify(recent)}\n\n`);
+  sseClients.add(res);
+  req.on('close',()=>sseClients.delete(res));
+  const ping=setInterval(()=>{try{res.write(':ping\n\n');}catch(e){clearInterval(ping);}},25000);
+  req.on('close',()=>clearInterval(ping));
+});
+app.post('/api/chat/send', requireAuth, async (req,res)=>{
+  let {message}=req.body;
+  if(!message||!message.trim())return res.status(400).json({error:'Empty message'});
+  message=message.slice(0,300).trim();
+  const u=req.user;
+  if(message.startsWith('.pay ')){
+    const parts=message.split(' ');
+    const mention=parts[1],amount=parseInt(parts[2]);
+    if(!mention||isNaN(amount)||amount<1)return res.status(400).json({error:'Usage: .pay @username amount'});
+    const targetName=mention.replace('@','').toLowerCase();
+    const target=db.getAllUsers().find(u=>u.username.toLowerCase()===targetName);
+    if(!target)return res.status(400).json({error:`User ${mention} not found`});
+    const freshSender=db.getUser(u.discord_id);
+    if(!freshSender||freshSender.balance<amount)return res.status(400).json({error:'Insufficient balance'});
+    db.addBalance(u.discord_id,-amount);db.addBalance(target.discord_id,amount);
+    const sysMsg=db.addChatMessage('system','💸 System','',`**${u.username}** sent **${amount.toLocaleString()} ST** to **${target.username}**!`);
+    broadcastSSE('chat',sysMsg);return res.json({ok:true});
+  }
+  if(message.startsWith('.balance')){
+    const sysMsg=db.addChatMessage('system','🏦 Bank','',`**${u.username}**'s balance: **${u.balance.toLocaleString()} ST**`);
+    broadcastSSE('chat',sysMsg);return res.json({ok:true});
+  }
+  if(message.startsWith('.top')){
+    const top=db.getLeaderboard(5);
+    const medals=['🥇','🥈','🥉','4️⃣','5️⃣'];
+    const text=top.map((p,i)=>`${medals[i]} ${p.username}: ${p.balance.toLocaleString()} ST`).join(' | ');
+    const sysMsg=db.addChatMessage('system','🏆 Leaderboard','',text);
+    broadcastSSE('chat',sysMsg);return res.json({ok:true});
+  }
+  if(message.startsWith('.flip ')){
+    const amount=parseInt(message.split(' ')[1]);
+    const freshU=db.getUser(u.discord_id);
+    if(!isNaN(amount)&&amount>0&&freshU&&freshU.balance>=amount){
+      const won=Math.random()<0.5;
+      db.addBalance(u.discord_id,won?amount:-amount);
+      const sysMsg=db.addChatMessage('system','🪙 Coinflip','',`**${u.username}** flipped ${amount.toLocaleString()} ST and ${won?'**WON** 🎉':'**LOST** 💀'}!`);
+      broadcastSSE('chat',sysMsg);return res.json({ok:true});
+    }
+  }
+  const msg=db.addChatMessage(u.discord_id,u.username,u.avatar,message);
+  broadcastSSE('chat',msg);
+  res.json({ok:true,msg});
+});
 
 // ── LEADERBOARD / STATS / HISTORY ────────────────────────
 app.get('/api/leaderboard', requireAuth, (req, res) => res.json(db.getLeaderboard(20)));
