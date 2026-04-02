@@ -15,7 +15,7 @@
   <div class="landing-bg"><div class="orb orb1"></div><div class="orb orb2"></div><div class="orb orb3"></div><div class="orb orb4"></div></div>
   <nav class="landing-nav">
     <div class="nav-logo"><span class="ls">S</span><span class="lc">ANTEN</span></div>
-    <button class="theme-btn" onclick="toggleTheme()" title="Toggle theme" id="theme-btn-landing">🌙</button>
+    <div class="style-btn" onclick="toggleStylePicker(event)" title="Change style">🎨<div class="style-dropdown" id="style-dropdown-landing"></div></div>
     <button class="dbtn sm" onclick="loginWithDiscord()"><svg width="18" height="13" viewBox="0 0 22 16" fill="none"><path d="M18.59 1.34A18.1 18.1 0 0014.2.02a.07.07 0 00-.07.03c-.18.32-.38.74-.52 1.07a16.72 16.72 0 00-5.02 0C8.44.77 8.23.35 8.05.05A.07.07 0 008 .02 18.06 18.06 0 003.6 1.34a.06.06 0 00-.03.03C.52 5.77-.31 10.1.1 14.36c0 .02.01.04.03.05a18.18 18.18 0 005.49 2.77.07.07 0 00.08-.03c.42-.58.8-1.19 1.12-1.83a.07.07 0 00-.04-.1 11.97 11.97 0 01-1.71-.82.07.07 0 010-.11c.11-.09.23-.17.34-.26a.07.07 0 01.07-.01c3.59 1.64 7.48 1.64 11.03 0a.07.07 0 01.07.01c.11.09.23.17.34.26a.07.07 0 010 .11c-.54.32-1.12.59-1.71.82a.07.07 0 00-.04.1c.33.64.71 1.25 1.12 1.83a.07.07 0 00.08.03 18.13 18.13 0 005.5-2.77.07.07 0 00.03-.05c.46-4.84-.77-9.04-3.26-12.99a.05.05 0 00-.03-.03zM7.35 11.86c-1.08 0-1.97-.99-1.97-2.21s.87-2.21 1.97-2.21c1.11 0 1.99 1 1.97 2.21 0 1.22-.87 2.21-1.97 2.21zm7.29 0c-1.08 0-1.97-.99-1.97-2.21s.87-2.21 1.97-2.21c1.11 0 1.99 1 1.97 2.21 0 1.22-.86 2.21-1.97 2.21z" fill="white"/></svg>Login</button>
   </nav>
   <div class="landing-hero">
@@ -36,7 +36,7 @@
 <!-- APP -->
 <div id="app" class="app hidden">
   <aside class="sidebar">
-    <div class="sidebar-logo"><div class="sidebar-logo-mark">S</div><div class="sidebar-logo-text"><span class="ls">S</span><span class="lc">ANTEN</span></div></div>
+    <div class="sidebar-logo"><div class="sidebar-logo-mark">S</div><div class="sidebar-logo-label"><span>S</span>ANTEN</div></div>
     <nav class="snav">
       <div class="snl">Casino</div>
       <a class="ni active" data-page="slots"       onclick="showPage('slots')">      <i>🎰</i>Slots</a>
@@ -46,11 +46,11 @@
       <a class="ni"        data-page="plinko"      onclick="showPage('plinko')">     <i>🔵</i>Plinko</a>
       <a class="ni"        data-page="coinflip"    onclick="showPage('coinflip')">   <i>🪙</i>Coinflip</a>
       <a class="ni"        data-page="hilo"        onclick="showPage('hilo')">       <i>🎴</i>Hi-Lo</a>
-      <a class="ni"        data-page="casebattle"  onclick="showPage('casebattle')"><i>📦</i>Cases</a>
+      <a class="ni"        data-page="casebattle"  onclick="showPage('casebattle')"><i>📦</i><span class="ni-label">Cases</span></a>
       <div class="snl">Rewards</div>
       <a class="ni"        data-page="daily"       onclick="showPage('daily')">      <i>🎁</i>Daily</a>
       <div class="snl">Community</div>
-      <a class="ni"        data-page="leaderboard" onclick="showPage('leaderboard')"><i>🏆</i>Leaderboard</a>
+      <a class="ni"        data-page="leaderboard" onclick="showPage('leaderboard')"><i>🏆</i><span class="ni-label">Leaderboard</span></a>
     </nav>
     <div class="sidebar-user" onclick="openProfile()">
       <img id="user-avatar" src="" class="uav" alt=""/>
@@ -73,7 +73,7 @@
           <span class="bal-icon">💰</span>
           <span id="header-balance" class="bal-amt">0 ST</span>
         </div>
-        <button class="theme-btn" onclick="toggleTheme()" title="Toggle theme" id="theme-btn-app">🌙</button>
+        <div class="style-btn" onclick="toggleStylePicker(event)" title="Change style">🎨<div class="style-dropdown" id="style-dropdown"></div></div>
       </div>
     </header>
 
