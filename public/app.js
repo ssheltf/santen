@@ -1384,33 +1384,58 @@ async function cbAddBot() {
   catch(e) { /* battle may have already started, ignore */ }
 }
 
-// ── Theme ──────────────────────────────────────────────────
-function toggleTheme() {
-  const current = document.documentElement.getAttribute('data-theme');
-  const next = current === 'light' ? 'dark' : 'light';
-  if (next === 'dark') {
+// ── Style System ─────────────────────────────────────────────
+const STYLES = [
+  { id:'dark',    label:'Dark',    dot:'#e8b84b', icon:'🎰' },
+  { id:'ocean',   label:'Ocean',   dot:'#4f9cf9', icon:'🌊' },
+  { id:'emerald', label:'Emerald', dot:'#34d17a', icon:'🌿' },
+  { id:'crimson', label:'Crimson', dot:'#f05252', icon:'🔴' },
+  { id:'light',   label:'Light',   dot:'#1a202c', icon:'☀️' },
+];
+let currentStyle = 'dark';
+
+function applyStyle(id) {
+  currentStyle = id;
+  if (id === 'dark') {
     document.documentElement.removeAttribute('data-theme');
   } else {
-    document.documentElement.setAttribute('data-theme', 'light');
+    document.documentElement.setAttribute('data-theme', id);
   }
-  const icon = next === 'light' ? '☀️' : '🌙';
-  const btn1 = document.getElementById('theme-btn-landing');
-  const btn2 = document.getElementById('theme-btn-app');
-  if (btn1) btn1.textContent = icon;
-  if (btn2) btn2.textContent = icon;
-  try { localStorage.setItem('santen-theme', next); } catch(e) {}
+  try { localStorage.setItem('santen-style', id); } catch(e) {}
+  renderStyleDropdown();
 }
+
+function renderStyleDropdown() {
+  const dd = document.getElementById('style-dropdown');
+  if (!dd) return;
+  dd.innerHTML = '';
+  STYLES.forEach(s => {
+    const opt = document.createElement('div');
+    opt.className = 'style-opt' + (s.id === currentStyle ? ' active' : '');
+    opt.innerHTML = `<div class="style-dot" style="background:${s.dot}"></div>${s.label}`;
+    opt.onclick = (e) => { e.stopPropagation(); applyStyle(s.id); dd.classList.remove('open'); };
+    dd.appendChild(opt);
+  });
+}
+
+function toggleStylePicker(e) {
+  e.stopPropagation();
+  const dd = document.getElementById('style-dropdown');
+  if (!dd) return;
+  dd.classList.toggle('open');
+  renderStyleDropdown();
+}
+
 function initTheme() {
   try {
-    const saved = localStorage.getItem('santen-theme');
-    if (saved === 'light') {
-      document.documentElement.setAttribute('data-theme', 'light');
-      const btn1 = document.getElementById('theme-btn-landing');
-      const btn2 = document.getElementById('theme-btn-app');
-      if (btn1) btn1.textContent = '☀️';
-      if (btn2) btn2.textContent = '☀️';
-    }
+    const saved = localStorage.getItem('santen-style');
+    if (saved) applyStyle(saved);
   } catch(e) {}
+  // Close dropdown on outside click
+  document.addEventListener('click', () => {
+    const dd = document.getElementById('style-dropdown');
+    if (dd) dd.classList.remove('open');
+  });
 }
 
 // ── Boot ──────────────────────────────────────────────────
@@ -1509,6 +1534,9 @@ function initLandingParticles() {
 // Expose only what HTML onclick handlers need — nothing else
   window.loginWithDiscord = loginWithDiscord;
   window.toggleTheme = toggleTheme;
+  window.toggleStylePicker = toggleStylePicker;
+  window.toggleTheme = toggleStylePicker; // alias
+  window.applyStyle = applyStyle;
   window.cbShowCreate = cbShowCreate;
   window.cbHideCreate = cbHideCreate;
   window.cbSetMode = cbSetMode;
