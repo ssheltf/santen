@@ -5,7 +5,7 @@
 // ── State ────────────────────────────────────────────────
 let user = null;
 let _gameToken = null; // server-issued token, validated on every game request
-let bets = { slots:50, bj:50, roulette:50, cf:50, plinko:50, hilo:50, mines:50 };
+let bets = { slots:50, bj:50, roulette:50, cf:50, crash:50, plinko:50, hilo:50, mines:50 };
 let bjState = null, rouletteBet = null, coinChoice = null;
 let minesState = null, mineCount = 5;
 let hiloActive = false, hiloBet = 0, hiloMult = 1;
@@ -40,6 +40,7 @@ function showApp() {
   document.getElementById('app').classList.remove('hidden');
   updateUserUI();
   showPage('slots');
+  initCrashCanvas();
   initReels();
   drawRouletteWheel(0);
   buildMinesGrid();
@@ -99,7 +100,7 @@ function showPage(page) {
   document.getElementById('page-'+page).classList.add('active');
   const nav = document.querySelector(`.ni[data-page="${page}"]`);
   if(nav) nav.classList.add('active');
-  const titles={slots:'Slots',blackjack:'Blackjack',roulette:'Roulette',mines:'Mines',plinko:'Plinko',coinflip:'Coinflip',hilo:'Hi-Lo',daily:'Daily Reward',leaderboard:'Leaderboard'};
+  const titles={slots:'Slots',blackjack:'Blackjack',roulette:'Roulette',crash:'Crash',mines:'Mines',plinko:'Plinko',coinflip:'Coinflip',hilo:'Hi-Lo',daily:'Daily Reward',leaderboard:'Leaderboard'};
   const badge=document.getElementById('topbar-badge');
   if(badge){badge.style.display=['slots','mines','plinko','hilo'].includes(page)?'':'none';}
   document.getElementById('page-title').textContent = titles[page]||page;
@@ -780,6 +781,106 @@ async function claimDaily(){
 }
 
 // ── LEADERBOARD ────────────────────────────────────────────
+
+// ── CRASH ────────────────────────────────────────────────
+let crashCanvas, crashCtx, crashMult=1.0, crashActive=false, crashCashedOut=false;
+let crashPoints=[], crashRaf=null, crashStartTime=null;
+
+function initCrashCanvas(){
+  crashCanvas=document.getElementById('crash-canvas');
+  if(!crashCanvas)return;
+  crashCtx=crashCanvas.getContext('2d');
+  drawCrashIdle();
+}
+function drawCrashIdle(){
+  if(!crashCtx)return;
+  const {width:W,height:H}=crashCanvas;
+  crashCtx.clearRect(0,0,W,H);
+  crashCtx.strokeStyle='rgba(255,255,255,0.04)';crashCtx.lineWidth=1;
+  for(let x=0;x<W;x+=W/6){crashCtx.beginPath();crashCtx.moveTo(x,0);crashCtx.lineTo(x,H);crashCtx.stroke();}
+  for(let y=0;y<H;y+=H/4){crashCtx.beginPath();crashCtx.moveTo(0,y);crashCtx.lineTo(W,y);crashCtx.stroke();}
+}
+function drawCrashFrame(){
+  if(!crashCtx||crashPoints.length<2)return;
+  const {width:W,height:H}=crashCanvas;
+  crashCtx.clearRect(0,0,W,H);
+  crashCtx.strokeStyle='rgba(255,255,255,0.04)';crashCtx.lineWidth=1;
+  for(let x=0;x<W;x+=W/6){crashCtx.beginPath();crashCtx.moveTo(x,0);crashCtx.lineTo(x,H);crashCtx.stroke();}
+  for(let y=0;y<H;y+=H/4){crashCtx.beginPath();crashCtx.moveTo(0,y);crashCtx.lineTo(W,y);crashCtx.stroke();}
+  const maxMult=Math.max(crashMult*1.1,2);
+  const mx=t=>t*(W-30)+15, my=m=>H-10-(m-1)/(maxMult-1)*(H-20);
+  const n=crashPoints.length;
+  const grad=crashCtx.createLinearGradient(0,H,0,my(crashMult));
+  grad.addColorStop(0,'rgba(232,184,75,0.03)');grad.addColorStop(1,'rgba(232,184,75,0.18)');
+  crashCtx.beginPath();crashCtx.moveTo(mx(0),H);
+  crashPoints.forEach((p,i)=>crashCtx.lineTo(mx(i/(n-1)),my(p)));
+  crashCtx.lineTo(mx(1),H);crashCtx.closePath();crashCtx.fillStyle=grad;crashCtx.fill();
+  crashCtx.beginPath();crashCtx.moveTo(mx(0),my(1));
+  crashPoints.forEach((p,i)=>crashCtx.lineTo(mx(i/(n-1)),my(p)));
+  crashCtx.strokeStyle='var(--gold)';crashCtx.lineWidth=2.5;
+  crashCtx.shadowColor='rgba(232,184,75,0.4)';crashCtx.shadowBlur=8;crashCtx.stroke();crashCtx.shadowBlur=0;
+  const ex=mx(1),ey=my(crashMult);
+  crashCtx.beginPath();crashCtx.arc(ex,ey,5,0,Math.PI*2);crashCtx.fillStyle='var(--gold)';crashCtx.fill();
+}
+async function startCrash(){
+  if(!user)return;
+  const btn=document.getElementById('crash-btn'),cashBtn=document.getElementById('cashout-btn');
+  btn.disabled=true;document.getElementById('crash-result').textContent='';
+  try{
+    const data=await apiPost('/api/crash/start',{bet:bets.crash});
+    user.balance=data.newBalance;updateUserUI();
+    crashMult=1.0;crashActive=true;crashCashedOut=false;crashPoints=[1];crashStartTime=performance.now();
+    const mult=document.getElementById('crash-multiplier'),status=document.getElementById('crash-status');
+    mult.classList.remove('crashed');status.textContent='🚀 Flying!';
+    btn.classList.add('hidden');cashBtn.classList.remove('hidden');
+    function tick(now){
+      if(!crashActive)return;
+      const elapsed=(now-crashStartTime)/1000;
+      crashMult=Math.max(1,parseFloat(Math.pow(Math.E,0.1*elapsed).toFixed(2)));
+      crashPoints.push(crashMult);
+      mult.textContent=crashMult.toFixed(2)+'×';
+      drawCrashFrame();
+      crashRaf=requestAnimationFrame(tick);
+    }
+    crashRaf=requestAnimationFrame(tick);
+    // Poll server to detect crash
+    const poll=setInterval(async()=>{
+      if(!crashActive){clearInterval(poll);return;}
+      try{
+        const alive=await fetch('/api/crash/alive').then(r=>r.json());
+        if(alive.crashed){
+          clearInterval(poll);crashActive=false;
+          if(crashRaf)cancelAnimationFrame(crashRaf);
+          if(!crashCashedOut){
+            mult.textContent=alive.at.toFixed(2)+'× CRASHED';mult.classList.add('crashed');
+            status.textContent='💥 Crashed!';
+            cashBtn.classList.add('hidden');btn.classList.remove('hidden');btn.disabled=false;
+            document.getElementById('crash-result').innerHTML=`<span style="color:var(--red)">Crashed at ${alive.at.toFixed(2)}× — Lost ${fmtNum(bets.crash)} ST</span>`;
+            sfx('crash_boom');
+          }
+        }
+      }catch(e){}
+    },500);
+  }catch(e){showErr('crash-result',e.message);btn.disabled=false;}
+}
+async function cashOut(){
+  if(!crashActive||crashCashedOut)return;
+  crashCashedOut=true;crashActive=false;
+  if(crashRaf)cancelAnimationFrame(crashRaf);
+  try{
+    const d=await apiPost('/api/crash/cashout',{});
+    updateUserUI(d.newBalance);
+    sfx('cashout');
+    document.getElementById('crash-status').textContent='💰 Cashed out!';
+    document.getElementById('crash-result').innerHTML=`<span style="color:var(--gold)">Cashed out ${crashMult.toFixed(2)}× — +${fmtNum(d.profit||0)} ST!</span>`;
+  }catch(e){
+    document.getElementById('crash-result').innerHTML=`<span style="color:var(--red)">${e.message}</span>`;
+  }
+  document.getElementById('cashout-btn').classList.add('hidden');
+  const btn=document.getElementById('crash-btn');btn.classList.remove('hidden');btn.disabled=false;
+}
+function turboSpin(){ spinSlots(true); }
+
 async function loadLeaderboard(){
   const list=document.getElementById('leaderboard-list');list.innerHTML='<div class="lb-load">Loading...</div>';
   try{
@@ -1418,6 +1519,7 @@ function renderStyleDropdown() {
   });
 }
 
+function toggleTheme(e) { toggleStylePicker(e); }
 function toggleStylePicker(e) {
   e.stopPropagation();
   const dd = document.getElementById('style-dropdown');
@@ -1444,35 +1546,8 @@ init();
 initLandingParticles();
 initDevtoolsGuard();
 
-function initDevtoolsGuard() {
-  // Console lockdown — replace with no-ops so nothing leaks
-  const noop = () => {};
-  try {
-    window.console.log   = noop;
-    window.console.debug = noop;
-    window.console.info  = noop;
-    window.console.table = noop;
-    window.console.dir   = noop;
-    window.console.error = noop;
-    window.console.warn  = noop;
-  } catch(e) {}
-
-  // Block right-click context menu
-  document.addEventListener('contextmenu', e => e.preventDefault());
-
-  // Block common devtools keyboard shortcuts
-  document.addEventListener('keydown', e => {
-    if (
-      e.key === 'F12' ||
-      (e.ctrlKey && e.shiftKey && ['I','J','C','K'].includes(e.key.toUpperCase())) ||
-      (e.metaKey && e.altKey  && ['I','J','C'].includes(e.key.toUpperCase())) ||
-      (e.ctrlKey && e.key === 'U')
-    ) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  });
-}
+// devtools guard removed — was blocking keyboard/click events
+function initDevtoolsGuard() {}
 
 function initLandingParticles() {
   const canvas = document.getElementById('landing-particles');
@@ -1572,5 +1647,8 @@ function initLandingParticles() {
   window.closeProfile = closeProfile;
   window.chatKeydown = chatKeydown;
   window.sendChat = sendChat;
+  window.startCrash = startCrash;
+  window.cashOut = cashOut;
+  window.turboSpin = turboSpin;
 
 })();
