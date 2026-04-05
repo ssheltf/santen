@@ -42,6 +42,7 @@
       <a class="ni active" data-page="slots"       onclick="showPage('slots')">      <i>🎰</i>Slots</a>
       <a class="ni"        data-page="blackjack"   onclick="showPage('blackjack')">  <i>🃏</i>Blackjack</a>
       <a class="ni"        data-page="roulette"    onclick="showPage('roulette')">   <i>🎡</i>Roulette</a>
+      <a class="ni"        data-page="crash"       onclick="showPage('crash')">      <i>📈</i><span class="ni-label">Crash</span></a>
       <a class="ni"        data-page="mines"       onclick="showPage('mines')">      <i>💣</i>Mines</a>
       <a class="ni"        data-page="plinko"      onclick="showPage('plinko')">     <i>🔵</i>Plinko</a>
       <a class="ni"        data-page="coinflip"    onclick="showPage('coinflip')">   <i>🪙</i>Coinflip</a>
@@ -159,6 +160,28 @@
             <div class="mine-count-ctrl"><span>Mines:</span><button onclick="adjustMines(-1)">−</button><span id="mine-count">5</span><button onclick="adjustMines(1)">+</button></div>
             <button class="sbtn" id="mines-btn" onclick="startMines()">PLAY</button>
             <button class="cashout-btn hidden" id="mines-cashout" onclick="minesCashout()">CASH OUT</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- CRASH -->
+    <div id="page-crash" class="page">
+      <div class="gc">
+        <div class="crash-area">
+          <div class="crash-graph-wrap">
+            <canvas id="crash-canvas" width="600" height="320"></canvas>
+            <div class="crash-mult-overlay">
+              <div class="crash-mult" id="crash-multiplier">1.00×</div>
+              <div class="crash-status" id="crash-status">Place your bet</div>
+            </div>
+          </div>
+          <div id="crash-result" class="crash-result"></div>
+          <div class="bet-row">
+            <div class="bet-ctrl"><button onclick="adjustBet('crash',-50)">−</button><input class="bet-input" id="crash-bet-input" type="number" value="50" min="10" onchange="setBetDirect('crash',this.value)"/><span class="stlabel">ST</span><button onclick="adjustBet('crash',50)">+</button></div>
+            <button class="sbtn" id="crash-btn" onclick="startCrash()">BET & LAUNCH</button>
+            <button class="cashout-btn hidden" id="cashout-btn" onclick="cashOut()">🚀 CASH OUT</button>
           </div>
         </div>
       </div>
